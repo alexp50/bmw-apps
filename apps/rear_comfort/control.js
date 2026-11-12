@@ -12,11 +12,13 @@ class RearControl {
     constructor(signals, log, changed) {
         this.signals = signals; this.log = log; this.changed = changed || (() => {});
         this.p = {}; this.subs = []; this.busy = false; this.seatAlive = 0;
+        this.seatCancelToken = 0; this.activeSeatRequests = new Set();
         this.state = {
             climate: { left: null, right: null, blower: null, auto: null, on: null, lock: null },
             left: { heat: 0, vent: 0, massage: 0, program: 1 },
             right: { heat: 0, vent: 0, massage: 0, program: 1 },
             memory: { side: null, status: 'Waiting for BMW seat memory', requestor: null },
+            seatMotion: { active: false, label: 'Ready', step: '' },
             shades: { left: null, right: null, rear: null },
             screens: { left: null, right: null, focus: 'NO_RSE_SELECTION', display: null,
                 brightness: null, volume: null, ready: null, remote: null, apps: [] },
@@ -205,16 +207,68 @@ class RearControl {
             await pause(300); await this.signals.set(p, field, { [member]: 'KEINE_AKTION' });
         });
     }
-    async moveSeat(side, action) {
-        return this.operation('Rear ' + side + ' seat', async () => {
-            const p = this.require('seat');
-            const r = await this.signals.call(p, 'startSeatOperation', {
-                seatPosition: side === 'left' ? 'REAR_LEFT' : 'REAR_RIGHT', seatAction: action
-            });
-            const id = r && r.requestorID;
-            if (id === undefined || id === null) throw new Error('Seat controller did not grant movement');
-            try { await pause(350); await this.signals.call(p, 'aliveSeatOperation', { requestorID: id }); }
-            finally { await this.signals.call(p, 'stopSeatOperation', { requestorID: id }).catch(() => {}); }
+    seatPosition(side) { return side === 'left' ? 'REAR_LEFT' : 'REAR_RIGHT'; }
+    async moveSeatRaw(position, action, holdMs, token) {
+        const p = this.require('seat');
+        const r = await this.signals.call(p, 'startSeatOperation', { seatPosition: position, seatAction: action });
+        const id = r && r.requestorID;
+        if (id === undefined || id === null) throw new Error('Seat controller did not grant movement');
+        this.activeSeatRequests.add(id);
+        const until = Date.now() + Math.max(250, holdMs || 850);
+        try {
+            while (Date.now() < until) {
+                if (token !== undefined && token !== this.seatCancelToken) throw new Error('Seat movement stopped');
+                await pause(Math.min(400, Math.max(1, until - Date.now())));
+                if (token !== undefined && token !== this.seatCancelToken) throw new Error('Seat movement stopped');
+                await this.signals.call(p, 'aliveSeatOperation', { requestorID: id });
+            }
+        } finally {
+            this.activeSeatRequests.delete(id);
+            await this.signals.call(p, 'stopSeatOperation', { requestorID: id }).catch(() => {});
+        }
+    }
+    async moveSeat(side, action, holdMs, position) {
+        return this.operation((position === 'FRONT_RIGHT' ? 'Front passenger' : 'Rear ' + side) + ' seat', async () => {
+            const token = this.seatCancelToken;
+            this.state.seatMotion = { active: true, label: 'Manual adjustment', step: action }; this.touch();
+            try { await this.moveSeatRaw(position || this.seatPosition(side), action, holdMs || 850, token); }
+            finally { this.state.seatMotion = { active: false, label: 'Ready', step: '' }; this.touch(); }
+        });
+    }
+    async stopSeatMovement() {
+        this.seatCancelToken += 1;
+        const p = this.p.seat;
+        const ids = Array.from(this.activeSeatRequests);
+        if (p) await Promise.all(ids.map((id) => this.signals.call(p, 'stopSeatOperation', { requestorID: id }).catch(() => {})));
+        this.activeSeatRequests.clear();
+        this.state.seatMotion = { active: false, label: 'Stopped', step: '' }; this.touch();
+        return 'All seat movement stopped';
+    }
+    async seatPreset(side, preset) {
+        if (preset === 'relax' && side !== 'right') throw new Error('Relax mode is available for the Executive Lounge right rear seat');
+        const title = preset === 'relax' ? 'Executive Lounge relax' : 'Low profile';
+        return this.operation(title, async () => {
+            const token = ++this.seatCancelToken;
+            this.state.seatMotion = { active: true, label: title, step: 'Starting' }; this.touch();
+            const step = async (label, position, action, duration) => {
+                this.state.seatMotion.step = label; this.touch();
+                await this.moveSeatRaw(position, action, duration, token);
+            };
+            try {
+                if (preset === 'relax') {
+                    await step('Moving front passenger seat fully forward', 'FRONT_RIGHT', 'SEAT_ADJUSTMENT_HORIZONTAL_FRONT', 18000);
+                    await step('Reclining right rear backrest', 'REAR_RIGHT', 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 18000);
+                    await step('Extending Executive Lounge footrest', 'REAR_RIGHT', 'SEAT_ADJUSTMENT_FOOTREST_SWING_OUT', 18000);
+                } else {
+                    const position = this.seatPosition(side);
+                    await step('Lowering ' + side + ' rear backrest', position, 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 18000);
+                    await step('Lowering ' + side + ' rear headrest', position, 'SEAT_ADJUSTMENT_HEADREST_DOWN', 12000);
+                }
+                this.state.seatMotion = { active: false, label: title + ' complete', step: '' }; this.touch();
+            } catch (e) {
+                this.state.seatMotion = { active: false, label: e && e.message === 'Seat movement stopped' ? 'Stopped' : title + ' interrupted', step: '' };
+                this.touch(); throw e;
+            }
         });
     }
     seatTarget(side) { return side === 'left' ? 'FASH' : 'BFSH'; }
