@@ -20,9 +20,9 @@ const FALLBACK_UID = 65534;
 const SIGNAL_APP = 'vehicle_health';
 const OAP_UIDS = '/var/opt/public/oap/oap_12201/security/uids.txt';
 const UPLINK_UID_FILE = '/var/opt/mgu-uplink/uids.d/remote-telemetry-bridge';
-// A five-minute heartbeat stays within Cloudflare KV's free write quota.
-// State changes are uploaded immediately through scheduleUpload().
-const INTERVAL_MS = 300000;
+// The paid relay plan permits the 30-second cadence used by the in-car
+// assistant. State changes still upload immediately through scheduleUpload().
+const INTERVAL_MS = 30000;
 const DIAGNOSTIC_INTERVAL_MS = 30000;
 const COMMAND_INTERVAL_MS = 5000;
 
@@ -35,8 +35,20 @@ const state = {
     insideTemperatureSource: retained.insideTemperatureSource || null,
     insideTemperatureSampledAt: retained.insideTemperatureSampledAt || null,
     outsideTemperatureSource: retained.outsideTemperatureSource || null,
-    outsideTemperatureSampledAt: retained.outsideTemperatureSampledAt || null
+    outsideTemperatureSampledAt: retained.outsideTemperatureSampledAt || null,
+    assistant: retained.assistant || {
+        schema:1, warmup:null, trip:{current:null,recent:[]},
+        health:{}, service:{items:[],summary:null}, checkControl:{active:0,items:[]}, connection:{}
+    }
 };
+state.assistant.schema = 1;
+state.assistant.health = state.assistant.health || {};
+state.assistant.trip = state.assistant.trip || {current:null,recent:[]};
+state.assistant.trip.recent = Array.isArray(state.assistant.trip.recent) ? state.assistant.trip.recent : [];
+state.assistant.service = state.assistant.service || {items:[],summary:null};
+state.assistant.service.items = Array.isArray(state.assistant.service.items) ? state.assistant.service.items : [];
+state.assistant.checkControl = state.assistant.checkControl || {active:0,items:[]};
+state.assistant.connection = state.assistant.connection || {};
 let stopping = false;
 const proxies = [];
 let runtimeConfig = {};
@@ -47,6 +59,8 @@ let uploadTimer = null;
 let requestIhkaStatus = () => {};
 let diagnosticProxy = null;
 let ihkaStatusBusy = false;
+let assistantLastTick = Date.now();
+let assistantLastUpload = 0;
 
 function readJson(file, fallback) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch (e) { return fallback; }
@@ -62,19 +76,32 @@ function writeStatus() {
     const slow = {};
     if (finite(state.telemetry.batteryVoltage)) slow.batteryVoltage = state.telemetry.batteryVoltage;
     if (finite(state.telemetry.outsideTemperatureC)) slow.outsideTemperatureC = state.telemetry.outsideTemperatureC;
-    if (Object.keys(slow).length) {
-        try { atomicJson(RETAINED, {
-            sampledAt: state.lastSampleAt, telemetry: slow, climate: state.climate,
-            batteryVoltageSource: state.batteryVoltageSource,
-            outsideTemperatureSource: state.outsideTemperatureSource,
-            outsideTemperatureSampledAt: state.outsideTemperatureSampledAt
-        }); } catch (e) {}
-    }
+    try { atomicJson(RETAINED, {
+        sampledAt: state.lastSampleAt, telemetry: slow, climate: state.climate,
+        batteryVoltageSource: state.batteryVoltageSource,
+        outsideTemperatureSource: state.outsideTemperatureSource,
+        outsideTemperatureSampledAt: state.outsideTemperatureSampledAt,
+        assistant: state.assistant
+    }); } catch (e) {}
 }
 function finite(v) { return typeof v === 'number' && isFinite(v); }
 function temp(raw) { return finite(raw) && raw !== 255 ? Math.round((raw * 0.5 - 40) * 10) / 10 : null; }
 function speed(raw) { return finite(raw) && raw !== 65535 ? Math.round(raw * 0.015625 * 10) / 10 : null; }
 function pressure(raw) { return finite(raw) && raw < 65532 ? Math.round(raw) / 10 : null; }
+function round(v, n) { const p = Math.pow(10, n || 0); return Math.round(v * p) / p; }
+function walk(v, fn) {
+    if (!v || typeof v !== 'object') return;
+    if (Array.isArray(v)) return v.forEach((x) => walk(x, fn));
+    fn(v); Object.keys(v).forEach((k) => walk(v[k], fn));
+}
+function findObject(v, key) { let got = null; walk(v, (o) => { if (!got && Object.prototype.hasOwnProperty.call(o, key)) got = o; }); return got; }
+function cleanText(v) { return String(v == null ? '' : v).replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 120); }
+function oilLevel(v) {
+    return ({MOTOROELSTAND_UNTER_MINIMUM:'Below minimum',MOTOROELSTAND_AM_MINIMUM:'At minimum',MOTOROELSTAND_1_4:'1/4',
+        MOTOROELSTAND_2_4:'2/4',MOTOROELSTAND_3_4:'3/4',MOTOROELSTAND_4_4:'Full',MOTOROELSTAND_5_4:'Above full',
+        MOTOROELSTAND_UEBERFUELLT:'Overfilled',MOTOROELSTAND_OK:'OK',SERVICEFUNKTION_AKTIV:'Measuring',
+        0:'Below minimum',1:'At minimum',2:'1/4',3:'2/4',4:'3/4',5:'Full',6:'Above full',7:'Overfilled',13:'OK',14:'Measuring'})[v] || null;
+}
 function blowerLevel(raw) {
     const value = Number(raw);
     if (!Number.isFinite(value) || value < 0 || value > 27) return undefined;
@@ -158,9 +185,9 @@ function setOutsideDegrees(degrees, source, preferred) {
 }
 
 function ensureSomeIp() {
-    // v11 adds the CDS engine-state field. Component upgrades keep this
+    // v12 adds assistant health, service and Check Control fields. Component upgrades keep this
     // generated directory, so the marker must change when the manifest does.
-    const marker = path.join(SOMEIP_DIR, '.bridge-config-v11');
+    const marker = path.join(SOMEIP_DIR, '.bridge-config-v12');
     if (fs.existsSync(marker)) return;
     if (!fs.existsSync(SOMEIP_DIR)) fs.mkdirSync(SOMEIP_DIR);
     try {
@@ -879,6 +906,69 @@ function watchBatteryVoltage(someip) {
     }).catch((e) => { state.providers.batteryVoltage = false; state.error = 'battery voltage: ' + e.message; writeStatus(); return null; });
 }
 
+function assistantEngineState(running) {
+    const now = Date.now(), a = state.assistant, trip = a.trip || (a.trip = {current:null,recent:[]});
+    if (running === true && !trip.current) {
+        trip.current = {id:String(now), startedAt:new Date(now).toISOString(), stoppedAt:null,
+            durationSeconds:0, distanceKm:0, topSpeedKmh:0, tankStartLitres:a.health.tankLitres == null ? null : a.health.tankLitres,
+            tankEndLitres:null};
+        a.warmup = {startedAt:new Date(now).toISOString(), startCoolantC:a.health.coolantC == null ? null : a.health.coolantC,
+            progressPercent:0, estimatedMinutesRemaining:null, estimatedKmRemaining:null, safeRpm:1500, active:true};
+        assistantLastUpload = 0;
+    }
+    if (trip.current) {
+        if (running === true) trip.current.stoppedAt = null;
+        else if (!trip.current.stoppedAt) trip.current.stoppedAt = new Date(now).toISOString();
+    }
+}
+
+function assistantTick() {
+    const now = Date.now(), dt = Math.max(0, Math.min(10, (now - assistantLastTick) / 1000));
+    assistantLastTick = now;
+    const a = state.assistant, health = a.health || (a.health = {}), trip = a.trip || (a.trip = {current:null,recent:[]});
+    const current = trip.current, running = state.climate.engineRunning === true, speedKmh = finite(state.telemetry.speedKmh) ? state.telemetry.speedKmh : 0;
+    if (current) {
+        current.durationSeconds = Math.max(0, Math.round((now - Date.parse(current.startedAt)) / 1000));
+        if (running) {
+            current.distanceKm = round((current.distanceKm || 0) + speedKmh * dt / 3600, 3);
+            current.topSpeedKmh = round(Math.max(current.topSpeedKmh || 0, speedKmh), 1);
+            current.tankEndLitres = health.tankLitres == null ? current.tankEndLitres : health.tankLitres;
+        }
+        if (!running && current.stoppedAt && now - Date.parse(current.stoppedAt) >= 10 * 60000) {
+            current.endedAt = current.stoppedAt;
+            current.durationSeconds = Math.max(0, Math.round((Date.parse(current.endedAt) - Date.parse(current.startedAt)) / 1000));
+            current.fuelUsedLitres = finite(current.tankStartLitres) && finite(current.tankEndLitres) ? round(Math.max(0, current.tankStartLitres - current.tankEndLitres), 1) : null;
+            if (current.distanceKm >= 0.1 || current.durationSeconds >= 60) {
+                trip.recent = (trip.recent || []).filter((x) => x.id !== current.id).concat([current]).slice(-20);
+            }
+            trip.current = null;
+        }
+    }
+    if (a.warmup && running) {
+        const elapsedMin = Math.max(0, (now - Date.parse(a.warmup.startedAt)) / 60000);
+        const coolant = health.coolantC;
+        const start = finite(a.warmup.startCoolantC) ? a.warmup.startCoolantC : (finite(coolant) ? coolant : 20);
+        const target = 80;
+        const progress = finite(coolant) ? Math.max(0, Math.min(1, (coolant - start) / Math.max(1, target - start))) : 0;
+        const rate = finite(coolant) && elapsedMin >= 0.5 ? Math.max(0, (coolant - start) / elapsedMin) : 0;
+        const remainMin = rate > 0.4 && coolant < target ? Math.min(45, Math.max(0, (target - coolant) / rate)) : coolant >= target ? 0 : null;
+        const movingSpeed = current && current.durationSeconds > 20 ? current.distanceKm / (current.durationSeconds / 3600) : speedKmh;
+        a.warmup.progressPercent = Math.round(progress * 100);
+        a.warmup.estimatedMinutesRemaining = remainMin == null ? null : round(remainMin, 1);
+        a.warmup.estimatedKmRemaining = remainMin == null || movingSpeed < 2 ? null : round(movingSpeed * remainMin / 60, 1);
+        a.warmup.safeRpm = Math.round((1500 + progress * 1000) / 50) * 50;
+        a.warmup.active = coolant == null || coolant < target;
+        if (coolant >= target) a.warmup.completedAt = a.warmup.completedAt || new Date(now).toISOString();
+    } else if (a.warmup) a.warmup.active = false;
+    a.connection = {
+        bridgeVersion:'0.3.0', phase:state.phase, configured:state.configured, uplink:state.uplink,
+        providersReady:Object.keys(state.providers).filter((k) => state.providers[k]).length,
+        providersTotal:Object.keys(state.providers).length, lastUploadAt:state.lastUploadAt
+    };
+    a.sampledAt = new Date(now).toISOString();
+    if (now - assistantLastUpload >= 30000) { assistantLastUpload = now; writeStatus(); scheduleUpload(); }
+}
+
 function upload(config) {
     configureDns();
     if (!config.endpoint || !config.writeToken || !config.carId) {
@@ -891,7 +981,7 @@ function upload(config) {
     }
     const payload = Buffer.from(JSON.stringify({
         schema:1, sampledAt:state.lastSampleAt, awake:state.awake !== false,
-        telemetry:state.telemetry, climate:state.climate
+        telemetry:state.telemetry, climate:state.climate, assistant:state.assistant
     }));
     return new Promise((resolve) => {
         const req = https.request({
@@ -961,15 +1051,50 @@ async function main() {
                 engineRunning:running,
                 operatingMode:running === true ? 'driving' : state.climate.preconditioning ? 'preconditioning' : running === false ? 'parked' : undefined
             });
+            assistantEngineState(running);
+        }),
+        watch(someip, 'de.bmw.infotainment.vehicle.CDS', 'statusEngineTemperature', (v) => {
+            const coolant = temp(v && v.temperatureEngineDrive), oil = temp(v && v.temperatureEngineOilDrive);
+            if (coolant !== null) state.assistant.health.coolantC = coolant;
+            if (oil !== null) state.assistant.health.oilTemperatureC = oil;
         }),
         watch(someip, 'de.bmw.infotainment.vehicle.Vehicle2', 'statusCarSpeed2',
             (v) => setTelemetry('speedKmh', speed(v && v.speedVehicleCentreOfGravity))),
+        watch(someip, 'de.bmw.infotainment.vehicle.Vehicle2', 'statusOilDipstick2', (v) => {
+            const level = oilLevel(v && v.fluidLevelEngineOilRelative);
+            if (level) state.assistant.health.oilLevel = level;
+        }),
         watch(someip, 'de.bmw.infotainment.vehicle.TPMS', 'statusTyrePressure', (v) => {
             if (!v) return;
             setTelemetry('tyrePressureBar', {
                 frontLeft:pressure(v.actualValuePressureTyreFLH), frontRight:pressure(v.actualValuePressureTyreFRH),
                 rearLeft:pressure(v.actualValuePressureTyreRLH), rearRight:pressure(v.actualValuePressureTyreRRH)
             });
+        }),
+        watch(someip, 'de.bmw.infotainment.KombiIF', 'statusRangeTankStatus', (v) => {
+            if (finite(v && v.fluidLevelFuelTank) && v.fluidLevelFuelTank < 255) state.assistant.health.tankLitres = v.fluidLevelFuelTank;
+            if (finite(v && v.range) && v.range < 4095) state.assistant.health.rangeKm = v.range;
+        }),
+        watch(someip, 'de.bmw.infotainment.KombiInterface_2', 'cbsDataServiceList', (v) => {
+            const list = Array.isArray(v) ? v : (v && (v.cbsDataServiceList || v.value)) || [];
+            state.assistant.service.items = list.map((entry) => {
+                const s = findObject(entry, 'cBSIdentifier') || {};
+                return {id:s.cBSIdentifier == null ? null : String(s.cBSIdentifier), name:cleanText(s.cBSServcieName || s.cBSServiceName),
+                    distance:cleanText(s.cBSServiceWay), date:cleanText(s.cBSServiceDate), color:finite(s.cBSColor) ? s.cBSColor : null};
+            }).filter((x) => x.name).slice(0, 20);
+        }),
+        watch(someip, 'de.bmw.infotainment.KombiInterface_2', 'cbsDataSBA', (v) => {
+            const s = findObject(v, 'cBSDataSBAText') || {};
+            state.assistant.service.summary = {name:cleanText(s.cBSDataSBAText), distance:cleanText(s.cBSDataSBADistance), date:cleanText(s.cBSDataSBADate)};
+        }),
+        watch(someip, 'de.bmw.infotainment.checkcontrol.CheckControlMaster', 'basicList', (v) => {
+            const items = [];
+            walk(v, (o) => {
+                if (o.ccmId === undefined) return;
+                const active = o.activeState === 'AKTIV' || o.activeState === 0;
+                if (active && !items.some((x) => x.id === o.ccmId)) items.push({id:o.ccmId, ecu:o.requestorDiagAddr, reason:cleanText(o.reason)});
+            });
+            state.assistant.checkControl = {active:items.length, items:items.slice(0, 20)};
         }),
         watchBatteryVoltage(someip)
     ]);
@@ -980,6 +1105,7 @@ async function main() {
     tick(); setInterval(tick, INTERVAL_MS);
     const commandTick = () => { if (!stopping) pollCommand(runtimeConfig).catch(() => {}); };
     commandTick(); setInterval(commandTick, COMMAND_INTERVAL_MS);
+    assistantTick(); setInterval(assistantTick, 1000);
     // At cold boot oapcontroller can be active before its SOME/IP providers
     // are published. Re-enter through systemd once instead of remaining in a
     // permanently disconnected state until the next manual restart.

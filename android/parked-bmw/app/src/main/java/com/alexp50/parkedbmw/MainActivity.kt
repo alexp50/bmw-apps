@@ -44,11 +44,19 @@ data class ClimateState(
     val driverHeat: Int?, val passengerHeat: Int?, val rearLeftHeat: Int?, val rearRightHeat: Int?,
     val driverVent: Int?, val passengerVent: Int?, val rearLeftVent: Int?, val rearRightVent: Int?
 )
+data class WarmupState(val active:Boolean, val progress:Int?, val minutes:Double?, val distance:Double?, val safeRpm:Int?, val completedAt:Instant?)
+data class TripState(val id:String, val startedAt:Instant?, val endedAt:Instant?, val distanceKm:Double?, val durationSeconds:Int?, val topSpeedKmh:Double?, val fuelLitres:Double?)
+data class HealthState(val coolant:Double?, val oilTemperature:Double?, val oilLevel:String?, val rangeKm:Double?, val tankLitres:Double?)
+data class ServiceItem(val name:String, val distance:String?, val date:String?)
+data class AssistantState(
+    val warmup:WarmupState?, val currentTrip:TripState?, val recentTrips:List<TripState>, val health:HealthState?,
+    val services:List<ServiceItem>, val checkControlActive:Int, val bridgeVersion:String?, val providersReady:Int?, val providersTotal:Int?
+)
 data class Snapshot(
     val received: Instant, val sampled: Instant?, val awake: Boolean,
     val inside: Double?, val insideSampled: Instant?, val insideSource: String?,
     val outside: Double?, val battery: Double?, val voltage: Double?, val speed: Double?,
-    val tyres: Tyres?, val climate: ClimateState?
+    val tyres: Tyres?, val climate: ClimateState?, val assistant: AssistantState?
 )
 data class CommandResult(val id: String, val status: String, val result: String?)
 
@@ -81,6 +89,7 @@ fun ParkedBmwApp(context: Context) {
     var refreshing by remember { mutableStateOf(false) }
     var refreshKey by remember { mutableIntStateOf(0) }
     var commandState by remember { mutableStateOf("Ready") }
+    var page by remember { mutableStateOf("OVERVIEW") }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(endpoint, token, carId, refreshKey) {
@@ -110,36 +119,125 @@ fun ParkedBmwApp(context: Context) {
                         editing=false; refreshKey++
                     })
                 FreshnessCard(snapshot, error, refreshing) { refreshKey++ }
-                HeroTemperature(snapshot)
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    MetricCard("OUTSIDE", temp(snapshot?.outside), "°C", Blue, Modifier.weight(1f))
-                    MetricCard("12 V CHARGE", value(snapshot?.battery,0), "%", batteryColor(snapshot?.battery), Modifier.weight(1f))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                    listOf("OVERVIEW", "ASSISTANT", "CLIMATE").forEach { destination ->
+                        if (page == destination) Button(onClick={ page=destination }, modifier=Modifier.weight(1f)) { Text(destination) }
+                        else OutlinedButton(onClick={ page=destination }, modifier=Modifier.weight(1f)) { Text(destination) }
+                    }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-                    MetricCard("BATTERY VOLTAGE", value(snapshot?.voltage,2), "V", voltageColor(snapshot?.voltage), Modifier.weight(1f))
-                    MetricCard("VEHICLE SPEED", value(snapshot?.speed,1), "km/h", Cyan, Modifier.weight(1f))
-                }
-                TyreCard(snapshot?.tyres)
-                ClimateControls(enabled=isLive(snapshot) && commandToken.isNotBlank(), state=commandState, climate=snapshot?.climate) { command ->
-                    scope.launch {
-                        commandState = "Sending…"
-                        try {
-                            val result = sendCommand(endpoint, commandToken, carId, command)
-                            commandState = when (result.status) {
-                                "accepted" -> result.result ?: "Accepted by the car"
-                                "rejected", "error", "expired" -> result.result ?: result.status
-                                else -> "Queued for the car"
-                            }
-                            if (result.status == "accepted") {
-                                delay(1_200)
-                                refreshKey++
-                            }
-                        } catch (e: Exception) { commandState = e.message ?: "Command failed" }
+                when (page) {
+                    "ASSISTANT" -> AssistantPanel(snapshot?.assistant)
+                    "CLIMATE" -> ClimateControls(enabled=isLive(snapshot) && commandToken.isNotBlank(), state=commandState, climate=snapshot?.climate) { command ->
+                        scope.launch {
+                            commandState = "Sending…"
+                            try {
+                                val result = sendCommand(endpoint, commandToken, carId, command)
+                                commandState = when (result.status) {
+                                    "accepted" -> result.result ?: "Accepted by the car"
+                                    "rejected", "error", "expired" -> result.result ?: result.status
+                                    else -> "Queued for the car"
+                                }
+                                if (result.status == "accepted") { delay(1_200); refreshKey++ }
+                            } catch (e: Exception) { commandState = e.message ?: "Command failed" }
+                        }
+                    }
+                    else -> {
+                        HeroTemperature(snapshot)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            MetricCard("OUTSIDE", temp(snapshot?.outside), "°C", Blue, Modifier.weight(1f))
+                            MetricCard("12 V CHARGE", value(snapshot?.battery,0), "%", batteryColor(snapshot?.battery), Modifier.weight(1f))
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+                            MetricCard("BATTERY VOLTAGE", value(snapshot?.voltage,2), "V", voltageColor(snapshot?.voltage), Modifier.weight(1f))
+                            MetricCard("VEHICLE SPEED", value(snapshot?.speed,1), "km/h", Cyan, Modifier.weight(1f))
+                        }
+                        TyreCard(snapshot?.tyres)
                     }
                 }
                 Text("The MGU and LTE modem switch off when the car sleeps. Webasto can continue independently, but live controls require the MGU to be awake. Stale cabin readings are never presented as current.", color=Color(0xFF8EA5B5), fontSize=13.sp)
             }
         }
+    }
+}
+
+@Composable private fun AssistantPanel(assistant:AssistantState?) {
+    if (assistant == null) {
+        Card(colors=CardDefaults.cardColors(containerColor=Panel), shape=RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement=Arrangement.spacedBy(6.dp)) {
+                Text("BMW ASSISTANT", color=Cyan, fontWeight=FontWeight.Bold)
+                Text("Waiting for the updated telemetry bridge", color=Color(0xFFAFC1CC))
+            }
+        }
+        return
+    }
+    val warm=assistant.warmup
+    Card(colors=CardDefaults.cardColors(containerColor=Panel), shape=RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            Text("ENGINE WARM-UP", color=Cyan, fontWeight=FontWeight.Bold)
+            Text(when {
+                warm?.active == true -> "WARMING UP"
+                warm?.completedAt != null -> "OPERATING TEMPERATURE REACHED"
+                else -> "ENGINE OFF"
+            }, color=if(warm?.active == true) Amber else Green, fontSize=21.sp, fontWeight=FontWeight.Black)
+            LinearProgressIndicator(progress={((warm?.progress ?: 0)/100f).coerceIn(0f,1f)}, modifier=Modifier.fillMaxWidth().height(10.dp), color=Cyan, trackColor=Color(0xFF263946))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                MetricCard("PROGRESS", (warm?.progress?.toString() ?: "--"), "%", Cyan, Modifier.weight(1f))
+                MetricCard("TIME LEFT", warm?.minutes?.let{String.format("%.0f",it)} ?: "--", "min", Amber, Modifier.weight(1f))
+                MetricCard("DISTANCE", warm?.distance?.let{String.format("%.1f",it)} ?: "--", "km", Blue, Modifier.weight(1f))
+            }
+            Text("Estimated safe limit ${warm?.safeRpm ?: 2000} rpm. Estimates learn from the current warm-up rate.", color=Color(0xFF8EA5B5), fontSize=12.sp)
+        }
+    }
+    assistant.health?.let { health ->
+        Card(colors=CardDefaults.cardColors(containerColor=Panel), shape=RoundedCornerShape(18.dp)) {
+            Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement=Arrangement.spacedBy(10.dp)) {
+                Text("VEHICLE HEALTH", color=Cyan, fontWeight=FontWeight.Bold)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    MetricCard("COOLANT", value(health.coolant,0), "°C", if((health.coolant?:0.0)>=80) Green else Cyan, Modifier.weight(1f))
+                    MetricCard("OIL TEMP", value(health.oilTemperature,0), "°C", if((health.oilTemperature?:0.0)>=70) Green else Cyan, Modifier.weight(1f))
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+                    MetricCard("RANGE", value(health.rangeKm,0), "km", Blue, Modifier.weight(1f))
+                    MetricCard("TANK", value(health.tankLitres,1), "L", Amber, Modifier.weight(1f))
+                }
+                Text("Oil level ${health.oilLevel ?: "--"}  ·  Check Control ${assistant.checkControlActive} active", color=Color.White, fontWeight=FontWeight.SemiBold)
+            }
+        }
+    }
+    Card(colors=CardDefaults.cardColors(containerColor=Panel), shape=RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("TRIPS", color=Cyan, fontWeight=FontWeight.Bold)
+            assistant.currentTrip?.let {
+                Text("CURRENT", color=Green, fontSize=12.sp, fontWeight=FontWeight.Bold)
+                TripRow(it)
+            } ?: Text("No active trip", color=Color(0xFF8EA5B5))
+            if(assistant.recentTrips.isNotEmpty()) Text("RECENT", color=Color(0xFFAFC1CC), fontSize=12.sp, fontWeight=FontWeight.Bold)
+            assistant.recentTrips.take(10).forEach { TripRow(it) }
+        }
+    }
+    if(assistant.services.isNotEmpty()) Card(colors=CardDefaults.cardColors(containerColor=Panel), shape=RoundedCornerShape(18.dp)) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement=Arrangement.spacedBy(8.dp)) {
+            Text("SERVICE", color=Cyan, fontWeight=FontWeight.Bold)
+            assistant.services.take(10).forEach { item ->
+                Row(Modifier.fillMaxWidth()) {
+                    Text(item.name, color=Color.White, modifier=Modifier.weight(1f))
+                    Text(listOfNotNull(item.distance,item.date).joinToString("  "), color=Color(0xFFAFC1CC))
+                }
+            }
+        }
+    }
+    Text("Bridge ${assistant.bridgeVersion ?: "--"}  ·  providers ${assistant.providersReady ?: 0}/${assistant.providersTotal ?: 0}", color=Color(0xFF8EA5B5), fontSize=12.sp)
+}
+
+@Composable private fun TripRow(trip:TripState) {
+    val duration=trip.durationSeconds?.let{"${it/60} min"} ?: "--"
+    Row(Modifier.fillMaxWidth().padding(vertical=4.dp), verticalAlignment=Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(trip.startedAt?.let{clock(it)} ?: "Trip", color=Color.White, fontWeight=FontWeight.SemiBold)
+            Text(duration, color=Color(0xFF8EA5B5), fontSize=12.sp)
+        }
+        Text("${value(trip.distanceKm,1)} km", color=Cyan, modifier=Modifier.width(82.dp))
+        Text("${value(trip.topSpeedKmh,0)} km/h", color=Blue)
     }
 }
 
@@ -354,6 +452,41 @@ private suspend fun fetchSnapshot(endpoint:String, token:String, carId:String):S
             level("driverVent"), level("passengerVent"), level("rearLeftVent"), level("rearRightVent")
         )
     }
+    fun instant(value:String?):Instant? = value?.takeIf{it.isNotBlank()&&it!="null"}?.let{runCatching{Instant.parse(it)}.getOrNull()}
+    fun parseTrip(x:JSONObject):TripState {
+        fun num(name:String):Double? = if(x.has(name)&&!x.isNull(name)) x.optDouble(name) else null
+        return TripState(x.optString("id","trip"), instant(x.optString("startedAt")), instant(x.optString("endedAt")),
+            num("distanceKm"), num("durationSeconds")?.toInt(), num("topSpeedKmh"), num("fuelUsedLitres"))
+    }
+    val assistant = root.optJSONObject("assistant")?.let { a ->
+        val w=a.optJSONObject("warmup")?.let { w ->
+            WarmupState(w.optBoolean("active",false), if(w.has("progressPercent"))w.optInt("progressPercent") else null,
+                if(w.has("estimatedMinutesRemaining")&&!w.isNull("estimatedMinutesRemaining"))w.optDouble("estimatedMinutesRemaining") else null,
+                if(w.has("estimatedKmRemaining")&&!w.isNull("estimatedKmRemaining"))w.optDouble("estimatedKmRemaining") else null,
+                if(w.has("safeRpm"))w.optInt("safeRpm") else null, instant(w.optString("completedAt")))
+        }
+        val trip=a.optJSONObject("trip")
+        val current=trip?.optJSONObject("current")?.let(::parseTrip)
+        val recent=buildList {
+            val values=trip?.optJSONArray("recent")
+            if(values!=null) for(i in 0 until values.length()) values.optJSONObject(i)?.let{add(parseTrip(it))}
+        }.reversed()
+        val health=a.optJSONObject("health")?.let { h ->
+            fun num(name:String):Double? = if(h.has(name)&&!h.isNull(name))h.optDouble(name) else null
+            HealthState(num("coolantC"),num("oilTemperatureC"),h.optString("oilLevel").takeIf{it.isNotBlank()},num("rangeKm"),num("tankLitres"))
+        }
+        val services=buildList {
+            val values=a.optJSONObject("service")?.optJSONArray("items")
+            if(values!=null) for(i in 0 until values.length()) values.optJSONObject(i)?.let{x ->
+                val name=x.optString("name").trim()
+                if(name.isNotEmpty()) add(ServiceItem(name,x.optString("distance").takeIf{it.isNotBlank()},x.optString("date").takeIf{it.isNotBlank()}))
+            }
+        }
+        val check=a.optJSONObject("checkControl")?.optInt("active",0) ?: 0
+        val link=a.optJSONObject("connection")
+        AssistantState(w,current,recent,health,services,check,link?.optString("bridgeVersion")?.takeIf{it.isNotBlank()},
+            link?.let{if(it.has("providersReady"))it.optInt("providersReady") else null},link?.let{if(it.has("providersTotal"))it.optInt("providersTotal") else null})
+    }
     Snapshot(
         Instant.parse(root.getString("serverReceivedAt")),
         root.optString("sampledAt").takeIf{it.isNotBlank()&&it!="null"}?.let{Instant.parse(it)},
@@ -361,7 +494,7 @@ private suspend fun fetchSnapshot(endpoint:String, token:String, carId:String):S
         t.optString("insideTemperatureSampledAt").takeIf{it.isNotBlank()&&it!="null"}?.let{Instant.parse(it)},
         t.optString("insideTemperatureSource").takeIf{it.isNotBlank()&&it!="null"},
         number("outsideTemperatureC"),
-        number("batteryChargePercent"), number("batteryVoltage"), number("speedKmh"), tyre, climate
+        number("batteryChargePercent"), number("batteryVoltage"), number("speedKmh"), tyre, climate, assistant
     )
 }
 

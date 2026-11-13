@@ -33,6 +33,18 @@ function validSnapshot(body) {
   if (t.insideTemperatureSource != null && typeof t.insideTemperatureSource !== "string") return false;
   if (t.batteryVoltage != null && (t.batteryVoltage < 6 || t.batteryVoltage > 18)) return false;
   if (body.climate != null && (typeof body.climate !== "object" || Array.isArray(body.climate))) return false;
+  if (body.assistant != null) {
+    if (typeof body.assistant !== "object" || Array.isArray(body.assistant) || body.assistant.schema !== 1) return false;
+    const a = body.assistant;
+    if (a.warmup != null && (typeof a.warmup !== "object" || Array.isArray(a.warmup))) return false;
+    if (a.trip != null && (typeof a.trip !== "object" || Array.isArray(a.trip) ||
+        (a.trip.recent != null && (!Array.isArray(a.trip.recent) || a.trip.recent.length > 20)))) return false;
+    if (a.health != null && (typeof a.health !== "object" || Array.isArray(a.health))) return false;
+    if (a.service != null && (typeof a.service !== "object" || Array.isArray(a.service) ||
+        (a.service.items != null && (!Array.isArray(a.service.items) || a.service.items.length > 20)))) return false;
+    if (a.checkControl != null && (typeof a.checkControl !== "object" || Array.isArray(a.checkControl) ||
+        (a.checkControl.items != null && (!Array.isArray(a.checkControl.items) || a.checkControl.items.length > 20)))) return false;
+  }
   return true;
 }
 
@@ -97,7 +109,7 @@ export default {
     if (request.method === "POST" && resource === "telemetry" && !commandId) {
       if (!await sameSecret(token, env.CAR_WRITE_TOKEN)) return json({error: "unauthorized"}, 401);
       const length = Number(request.headers.get("content-length") || 0);
-      if (length > 16384) return json({error: "payload too large"}, 413);
+      if (length > 65536) return json({error: "payload too large"}, 413);
       let body;
       try { body = await request.json(); } catch (_) { return json({error: "invalid JSON"}, 400); }
       if (!validSnapshot(body)) return json({error: "invalid telemetry snapshot"}, 422);

@@ -1,9 +1,9 @@
 {
   "id": "remote-telemetry-bridge",
   "kind": "tool",
-  "version": "0.2.20",
+  "version": "0.3.0",
   "title": "Remote telemetry bridge",
-  "description": "Publishes parked-car telemetry and executes short-lived authenticated climate commands through mgu-uplink",
+  "description": "Publishes parked-car telemetry, warm-up, trips, health and service data and executes authenticated climate commands through mgu-uplink",
   "mguHmi": ["ID7"],
   "requires": {"mgu-deploy": "0.7.11", "mgu-uplink": "0.7.3", "vehicle_health": "0.1.9"},
   "uninstallable": true,

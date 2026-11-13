@@ -47,15 +47,27 @@
       "instances": "1"
     },
     "de.bmw.infotainment.vehicle.CDS": {
-      "attributes": {"statusBattery2": "rs", "statusEngineStatus": "rs"},
+      "attributes": {"statusBattery2": "rs", "statusEngineStatus": "rs", "statusEngineTemperature": "rs"},
       "instances": "1"
     },
     "de.bmw.infotainment.vehicle.Vehicle2": {
-      "attributes": {"statusCarSpeed2": "rs"},
+      "attributes": {"statusCarSpeed2": "rs", "statusOilDipstick2": "rs"},
       "instances": "1"
     },
     "de.bmw.infotainment.vehicle.TPMS": {
       "attributes": {"statusTyrePressure": "rs"},
+      "instances": "1"
+    },
+    "de.bmw.infotainment.KombiIF": {
+      "attributes": {"statusRangeTankStatus": "rs"},
+      "instances": "1"
+    },
+    "de.bmw.infotainment.KombiInterface_2": {
+      "attributes": {"cbsDataServiceList": "rs", "cbsDataSBA": "rs"},
+      "instances": "1"
+    },
+    "de.bmw.infotainment.checkcontrol.CheckControlMaster": {
+      "attributes": {"basicList": "rs"},
       "instances": "1"
     }
   },

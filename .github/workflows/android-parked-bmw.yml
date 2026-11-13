@@ -43,18 +43,18 @@ jobs:
         run: gradle -p android/parked-bmw :app:assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: Parked-BMW-0.4.1
+          name: Parked-BMW-0.5.0
           path: android/parked-bmw/app/build/outputs/apk/release/app-release.apk
       - name: Publish installable APK
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp android/parked-bmw/app/build/outputs/apk/release/app-release.apk Parked-BMW-0.4.1.apk
-          if gh release view 'parked-bmw-android@0.4.1' >/dev/null 2>&1; then
-            gh release upload 'parked-bmw-android@0.4.1' Parked-BMW-0.4.1.apk --clobber
+          cp android/parked-bmw/app/build/outputs/apk/release/app-release.apk Parked-BMW-0.5.0.apk
+          if gh release view 'parked-bmw-android@0.5.0' >/dev/null 2>&1; then
+            gh release upload 'parked-bmw-android@0.5.0' Parked-BMW-0.5.0.apk --clobber
           else
-            gh release create 'parked-bmw-android@0.4.1' Parked-BMW-0.4.1.apk \
-              --title 'Parked BMW for Android 0.4.1' \
-              --notes 'Distinguishes live cabin temperature from stale snapshots, labels Webasto preconditioning state, and supports the updated Climate2 seat-control path.' \
+            gh release create 'parked-bmw-android@0.5.0' Parked-BMW-0.5.0.apk \
+              --title 'Parked BMW for Android 0.5.0' \
+              --notes 'Adds BMW Assistant warm-up estimates, live and recent trips, vehicle health, service status, and bridge/provider diagnostics.' \
               --latest=false
           fi
