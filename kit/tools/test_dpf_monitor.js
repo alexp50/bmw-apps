@@ -60,6 +60,23 @@ assert.strictEqual(estimate.snapshot(125000).active, true, 'one stale cycle must
 estimate.update({ t: 160000, active: false, soot: 22.8, speed: 60 });
 assert.strictEqual(estimate.snapshot(160000).active, false, '30 seconds without detection ends the session');
 
+const next = D.nextRegenEstimate({ averageIntervalKm: 462, distanceSinceKm: 284.7,
+    operatingSeconds: 12640, successfulRegens: 347, currentSpeed: 76, active: false });
+assert.strictEqual(next.status, 'PROJECTED');
+assert.strictEqual(next.ready, true);
+assert(Math.abs(next.remainingDistance - 177.3) < 0.001);
+assert(Math.abs(next.averageSpeed - 81.085443) < 0.001);
+assert(Math.abs(next.etaMinutes - 131.19) < 0.1);
+assert.strictEqual(next.timeBasis, 'cycle average');
+assert.strictEqual(next.confidence, 'HIGH');
+const due = D.nextRegenEstimate({ averageIntervalKm: 400, distanceSinceKm: 410,
+    operatingSeconds: 20000, successfulRegens: 20, active: false });
+assert.strictEqual(due.status, 'DUE WINDOW');
+assert.strictEqual(due.remainingDistance, 0);
+assert.strictEqual(due.etaMinutes, 0);
+assert.strictEqual(D.nextRegenEstimate({ active: true }).status, 'CURRENT REGEN ACTIVE');
+assert.strictEqual(D.nextRegenEstimate({ averageIntervalKm: 65535, distanceSinceKm: 20 }).ready, false);
+
 const Reader = require(path.join(tmp, 'reader'));
 
 (async () => {

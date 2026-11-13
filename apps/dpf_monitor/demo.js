@@ -18,4 +18,7 @@ module.exports = {
     records, history, sgbd: '0F2670', variantName: 'D83BX7C0', vehicle: { coolant: 91, speed: 76 },
     estimate: { active: true, startSoot: 25.3, soot: 18.42, target: 6, progress: 0.356, rate: -0.34,
         etaMinutes: 36.5, distanceRemaining: 46.2, elapsedMinutes: 20, distance: 25.3, averageMovingSpeed: 76 },
+    next: { status: 'PROJECTED', active: false, ready: true, intervalKm: 462, distanceSinceKm: 284.7,
+        remainingDistance: 177.3, progress: 284.7 / 462, averageSpeed: 81.1, etaMinutes: 131.2,
+        timeBasis: 'cycle average', successfulRegens: 347, confidence: 'HIGH' },
 };

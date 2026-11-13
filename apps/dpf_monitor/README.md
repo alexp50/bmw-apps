@@ -10,6 +10,7 @@ An experimental, strictly read-only diesel particulate filter monitor for BMW MG
 - coolant temperature from the native vehicle signal
 - regeneration request and status codes
 - estimated regeneration progress, time remaining and distance remaining
+- estimated driving time and distance until the next regeneration starts
 - distance, time and fuel since the last successful regeneration
 - average regeneration interval and stored successful-regeneration count
 - oil ash mass and BMW CBS remaining service distance
@@ -25,6 +26,8 @@ The reader uses `kit/runtime/readonly-diag.js`. That transport accepts only read
 Live fields reject saved or samples older than 15 seconds. The reader polls live DIDs in a fair round-robin order so temperature DIDs cannot be starved by earlier soot requests.
 
 The regeneration estimate is also deliberately labelled. When an active regeneration is inferred, the app records its starting soot mass, fits the recent soot change in grams per minute, and integrates the vehicle-speed signal. Progress is measured from the starting soot value to the configurable end-soot target (6 g by default). Remaining time comes from the observed burn rate; remaining distance uses that time and the session's average moving speed. Until enough samples exist it says `CALIBRATING`. The target is an estimate, not a DDE command or BMW service threshold.
+
+The next-regeneration projection uses the DDE's learned average regeneration interval (`44C7`), distance since the last successful regeneration (`44BF`) and operating time since that regeneration (`44B7`). Remaining distance is the unused part of the learned interval. Driving time uses the average road rate observed over the current interval. It is not calendar time and it cannot account in advance for changing soot load, temperature or driving conditions. During an active regeneration the following cycle remains deliberately unestimated until the current one finishes and the DDE counters reset.
 
 ## Build and preview
 

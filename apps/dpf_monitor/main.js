@@ -9,9 +9,15 @@ const Reader = require('./reader');
 const DEMO = require('./demo');
 
 const W = 1600, H = 520;
-const PAGES = ['Now', 'Regen', 'History', 'Health', 'Details'];
+const PAGES = ['Now', 'Next regen', 'Regen', 'History', 'Health', 'Details'];
 const BLUE = '#55aaff', GREEN = '#2fd27a';
 const fmt = (v, digits) => D.finite(v) ? Number(v).toFixed(digits || 0) : '--';
+
+function durationValue(minutes) {
+    if (!D.finite(minutes)) return { text: '--', unit: '' };
+    if (minutes < 120) return { text: String(Math.max(0, Math.round(minutes))), unit: 'min' };
+    return { text: (minutes / 60).toFixed(1), unit: 'h' };
+}
 
 function age(rec) {
     if (!rec || !rec.at) return 'not read';
@@ -63,14 +69,18 @@ mgu.run({
                 estimate.etaMinutes = (estimate.soot - target) / -estimate.rate;
                 estimate.distanceRemaining = estimate.etaMinutes / 60 * estimate.averageMovingSpeed;
             }
-            return { soot, tc, slope, state, estimate, vehicle: v };
+            let next = D.nextRegenEstimate({ active: state.active,
+                averageIntervalKm: val('44C7'), distanceSinceKm: val('44BF'), operatingSeconds: val('44B7'),
+                successfulRegens: val('44B8'), currentSpeed: v.speed });
+            if (demo() && DEMO.next) next = Object.assign({}, DEMO.next);
+            return { soot, tc, slope, state, estimate, next, vehicle: v };
         }
 
         function wanted() {
             let ids = ['44B9', '44BA', '44BE', '44BB', '44ED', '4502', '44EF'];
-            if (page === 1 || page === 2) ids = ids.concat(C.HISTORY);
-            if (page === 3) ids = ids.concat(C.HEALTH);
-            if (page === 4) ids = ids.concat(C.HISTORY, C.HEALTH);
+            if (page === 1 || page === 2 || page === 3) ids = ids.concat(C.HISTORY);
+            if (page === 4) ids = ids.concat(C.HEALTH);
+            if (page === 5) ids = ids.concat(C.HISTORY, C.HEALTH);
             reader.setWanted(ids);
         }
 
@@ -161,6 +171,55 @@ mgu.run({
                 { rowH: 42, size: 22, middle: true });
         }
 
+        function nextRegenPage(cv, t, info) {
+            const e = info.next || {}, ready = !!e.ready, active = !!e.active;
+            const pct = ready && D.finite(e.progress) ? Math.round(e.progress * 100) : null;
+            const distance = ready && D.finite(e.remainingDistance) ? e.remainingDistance : null;
+            const eta = durationValue(ready ? e.etaMinutes : null);
+            const stateColor = active ? t.warn : ready ? (e.status === 'DUE WINDOW' ? t.warn : GREEN) : t.dim;
+
+            G.panel(cv, t, 24, 44, 760, 468, 'Next regeneration start · estimated');
+            G.pill(cv, t, 48, 86, 712, 48, e.status || 'LEARNING', { color: stateColor, size: 19 });
+            G.readout(cv, t, 48, 160, { label: 'Learned interval used', text: pct == null ? '--' : String(pct), unit: '%',
+                size: 72, color: ready ? BLUE : t.dim });
+            cv.roundRect(48, 254, 712, 24, 12, t.track);
+            if (ready && D.finite(e.progress) && e.progress > 0) {
+                cv.rampRect(48, 254, Math.max(24, 712 * e.progress), 24, 12, [BLUE, t.warn], 48, 712);
+            }
+            cv.text('Previous regen', 48, 315, 19, t.dim);
+            cv.text(ready ? fmt(e.distanceSinceKm, 1) + ' km driven' : '--', 404, 315, 21, t.text, { align: 'center' });
+            cv.text(ready ? fmt(e.intervalKm, 0) + ' km learned' : '--', 760, 315, 19, t.dim, { align: 'right' });
+            cv.text(D.finite(info.soot) ? 'Current measured soot: ' + fmt(info.soot, 1) + ' g' : 'Current measured soot: --',
+                48, 375, 23, D.finite(info.soot) ? GREEN : t.dim);
+            const message = active
+                ? 'The current regeneration has already started. The following cycle can be projected after it completes.'
+                : ready ? 'Projection follows the DDE learned average; actual start changes with load, temperature and driving.'
+                    : 'Waiting for the DDE learned interval and distance-since-regeneration counters.';
+            cv.text(message, 48, 430, 19, active ? t.warn : t.dim);
+            cv.text('Time means engine-running driving time, not calendar time.', 48, 474, 19, t.dim);
+
+            G.panel(cv, t, 808, 44, 368, 218, 'Driving time to start');
+            G.readout(cv, t, 832, 102, { text: active ? 'IN PROGRESS' : eta.text, unit: active ? '' : eta.unit,
+                size: active ? 29 : 72, font: active ? 'bold' : 'num', color: active || !ready ? t.dim : BLUE });
+            cv.text(ready && e.timeBasis ? 'using ' + e.timeBasis : 'waiting for a speed basis', 832, 235, 18, t.dim);
+            G.panel(cv, t, 1200, 44, 376, 218, 'Distance to start');
+            G.readout(cv, t, 1224, 102, { text: active ? 'IN PROGRESS' : distance == null ? '--' : fmt(distance, 1),
+                unit: active || distance == null ? '' : 'km', size: active ? 29 : 72, font: active ? 'bold' : 'num',
+                color: active || !ready ? t.dim : BLUE });
+            cv.text('remaining in learned interval', 1224, 235, 18, t.dim);
+
+            G.panel(cv, t, 808, 278, 768, 234, 'Estimate basis');
+            const rows = [
+                ['BMW learned interval', ready ? fmt(e.intervalKm, 0) + ' km' : '--'],
+                ['Distance since last successful regen', ready ? fmt(e.distanceSinceKm, 1) + ' km' : '--'],
+                ['Average speed since last regen', D.finite(e.averageSpeed) ? fmt(e.averageSpeed, 1) + ' km/h' : '--'],
+                ['Successful regenerations stored', D.finite(e.successfulRegens) ? fmt(e.successfulRegens, 0) : '--'],
+            ];
+            G.table(cv, t, 832, 318, 720, [{ label: 'Measure', w: 480 }, { label: 'Value', w: 220, align: 'right' }], rows,
+                { rowH: 42, size: 22, middle: true });
+            cv.text(ready ? e.confidence + ' CONFIDENCE' : 'LEARNING', 1548, 492, 17, ready ? GREEN : t.dim, { align: 'right' });
+        }
+
         function historyPage(cv, t) {
             const cards = [
                 ['Distance since last successful regen', val('44BF'), 'km', 1, '44BF'],
@@ -232,7 +291,8 @@ mgu.run({
             if (!demo() && reader.checked && !reader.supported) {
                 cv.text('This DDE variant is not in the verified DPF catalog', 800, 245, 34, t.warn, { align: 'center' });
                 cv.text('SGBD index ' + reader.sgbd + ' · Settings can try the shared layout as unverified', 800, 300, 23, t.dim, { align: 'center' });
-            } else [nowPage, (c, th) => regenPage(c, th, info), historyPage, healthPage, detailsPage][page](cv, t);
+            } else [nowPage, (c, th) => nextRegenPage(c, th, info), (c, th) => regenPage(c, th, info),
+                historyPage, healthPage, detailsPage][page](cv, t);
             return ui.image('MAIN_GFX', cv);
         });
     },

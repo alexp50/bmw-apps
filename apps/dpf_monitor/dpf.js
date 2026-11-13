@@ -59,6 +59,39 @@ function sessionRate(samples, now, minutes) {
 }
 
 /**
+ * Projects the start of the next regeneration from the DDE's own learned average interval.
+ * Time is driving/engine-running time, derived from this cycle's distance and operating time;
+ * calendar time cannot be predicted because soot accumulation depends on how the car is used.
+ */
+function nextRegenEstimate(sample) {
+    sample = sample || {};
+    if (sample.active) return { status: 'CURRENT REGEN ACTIVE', active: true, ready: false };
+    const interval = sample.averageIntervalKm, distance = sample.distanceSinceKm;
+    if (!finite(interval) || interval < 20 || interval > 2000 || !finite(distance) || distance < 0 || distance > 10000) {
+        return { status: 'LEARNING', active: false, ready: false };
+    }
+    const remainingDistance = Math.max(0, interval - distance);
+    const progress = Math.max(0, Math.min(1, distance / interval));
+    let averageSpeed = null, timeBasis = '';
+    if (finite(sample.operatingSeconds) && sample.operatingSeconds >= 600 && distance >= 1) {
+        const cycleSpeed = distance / (sample.operatingSeconds / 3600);
+        if (cycleSpeed >= 1 && cycleSpeed <= 180) { averageSpeed = cycleSpeed; timeBasis = 'cycle average'; }
+    }
+    if (!finite(averageSpeed) && finite(sample.currentSpeed) && sample.currentSpeed >= 5 && sample.currentSpeed <= 250) {
+        averageSpeed = sample.currentSpeed;
+        timeBasis = 'current speed fallback';
+    }
+    const etaMinutes = finite(averageSpeed) && averageSpeed > 0 ? remainingDistance / averageSpeed * 60 : null;
+    const count = sample.successfulRegens;
+    const confidence = finite(count) && count >= 10 && timeBasis === 'cycle average' ? 'HIGH'
+        : finite(count) && count >= 3 ? 'MEDIUM' : 'LOW';
+    const dueWindow = remainingDistance <= Math.max(15, interval * 0.03);
+    return { status: dueWindow ? 'DUE WINDOW' : 'PROJECTED', active: false, ready: true,
+        intervalKm: interval, distanceSinceKm: distance, remainingDistance, progress,
+        averageSpeed, etaMinutes, timeBasis, successfulRegens: finite(count) ? count : null, confidence };
+}
+
+/**
  * One inferred regeneration session. Distance integrates the car-speed signal; completion uses
  * the measured soot burn rate and an explicitly configurable soot target. Nothing here commands
  * or resets the DDE.
@@ -119,4 +152,4 @@ class RegenEstimator {
     }
 }
 
-module.exports = { decode, payload, regenState, trend, sessionRate, RegenEstimator, finite, fresh };
+module.exports = { decode, payload, regenState, trend, sessionRate, nextRegenEstimate, RegenEstimator, finite, fresh };
