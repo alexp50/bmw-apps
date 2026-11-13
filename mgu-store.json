@@ -9,7 +9,7 @@
     },
     "dpf_monitor": {
       "title": "DPF Monitor",
-      "description": "Read-only diesel particulate filter monitor: soot, regeneration progress, temperature, pressure and history",
+      "description": "Read-only DPF monitor with soot, current regeneration progress and next-regeneration distance/time estimates",
       "author": "alexp50",
       "icon": "dpf_monitor.png",
       "iconSha256": "05d736b1573e0e5603de7ba5417abc8c1b609ee1287c650463e3bf04e3c285d9"

@@ -29,17 +29,17 @@
     {
       "id": "dpf_monitor",
       "kind": "app",
-      "version": "0.3.2",
+      "version": "0.4.0",
       "title": "DPF Monitor",
-      "description": "Read-only diesel particulate filter monitor: soot, regeneration progress, temperature, pressure and history",
+      "description": "Read-only DPF monitor with soot, current regeneration progress and next-regeneration distance/time estimates",
       "mguHmi": [
         "ID7"
       ],
       "artifact": {
-        "name": "dpf_monitor@0.3.2.tgz",
-        "size": 1102193,
-        "sha256": "fb150fb02513b5aff07bd8ec14f26fa83d02455015f7336c26b24849b4341f98",
-        "url": "https://github.com/alexp50/bmw-apps/releases/download/dpf_monitor@0.3.2/dpf_monitor@0.3.2.tgz"
+        "name": "dpf_monitor@0.4.0.tgz",
+        "size": 1088657,
+        "sha256": "2072daeb48c9119d306601af12acb0ddd2876a051fb7f0436cdc0796ea434ea6",
+        "url": "https://github.com/alexp50/bmw-apps/releases/download/dpf_monitor@0.4.0/dpf_monitor@0.4.0.tgz"
       },
       "uninstallable": true,
       "requires": {
