@@ -1,8 +1,8 @@
-﻿# Rear Comfort
+# Rear Comfort
 
 Full-screen driver control for the BMW G12 rear compartment.
 
-Version 0.5.2 ports the BMW G11/G12 Touch Command visual hierarchy and donor artwork to the MGU. Its feature set follows VIN WBA7V61020CD61701: Executive Lounge, four-zone climate with BMW front-to-rear Sync, complete independent left/right rear-seat adjustment, native Lounge on/off, a two-seat rear-visibility position, three memories per rear seat, heat, ventilation and massage, electric blinds and Rear-seat Entertainment Experience.
+Version 0.5.5 ports the BMW G11/G12 Touch Command visual hierarchy and donor artwork to the MGU. Its feature set follows VIN WBA7V61020CD61701: Executive Lounge, four-zone climate with BMW front-to-rear Sync, complete independent left/right rear-seat adjustment, native Lounge on/off, a two-seat rear-visibility position, three memories per rear seat, heat, ventilation and massage, electric blinds and Rear-seat Entertainment Experience.
 
 Controls:
 

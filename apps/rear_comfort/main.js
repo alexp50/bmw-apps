@@ -132,9 +132,10 @@ mgu.run({ async start(ctx) {
         button(cv,t,1012,184,160,55,'OFF',()=>run('Rear climate off',()=>rear.climatePower(false)),C.red,s.climate.on===false);
         button(cv,t,1186,184,160,55,'AUTO',()=>run('Rear automatic',()=>rear.setClimateMode(true)),C.orange,!!s.climate.auto);
         button(cv,t,1360,184,160,55,'SYNC',()=>run('Climate sync',()=>rear.setClimateSync(!s.climate.sync)),C.blue,!!s.climate.sync);
-        cv.text('Rear blower',840,285,19,t.dim,{font:'bold'}); cv.text(finite(s.climate.blower)?String(s.climate.blower):'--',1035,295,40,C.cyan,{align:'center',font:'bold'});
-        button(cv,t,838,320,190,52,'LOWER',()=>run('Rear blower',()=>rear.setBlower(Math.max(1,(s.climate.blower||2)-1))),C.cyan,false);
-        button(cv,t,1044,320,190,52,'RAISE',()=>run('Rear blower',()=>rear.setBlower(Math.min(9,(s.climate.blower||2)+1))),C.cyan,false);
+        const blowerBase = finite(s.climate.blower) && !s.climate.auto ? s.climate.blower : 5;
+        cv.text('Rear blower',840,285,19,t.dim,{font:'bold'}); cv.text(s.climate.auto?'AUTO':(finite(s.climate.blower)?String(s.climate.blower):'--'),1035,295,40,C.cyan,{align:'center',font:'bold'});
+        button(cv,t,838,320,190,52,'LOWER',()=>run('Rear blower',()=>rear.setBlower(Math.max(1,blowerBase-1))),C.cyan,false);
+        button(cv,t,1044,320,190,52,'RAISE',()=>run('Rear blower',()=>rear.setBlower(Math.min(9,blowerBase+1))),C.cyan,false);
         cv.text('Sync is front to rear. Rear controls never command the front zones.',838,423,17,t.dim);
     }
     function seatSetting(cv,t,s) {
