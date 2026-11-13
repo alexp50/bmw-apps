@@ -437,17 +437,17 @@
     {
       "id": "remote-telemetry-bridge",
       "kind": "tool",
-      "version": "0.2.20",
+      "version": "0.3.0",
       "title": "Remote telemetry bridge",
-      "description": "Publishes parked-car telemetry and executes short-lived authenticated climate commands through mgu-uplink",
+      "description": "Publishes parked-car telemetry, warm-up, trips, health and service data and executes authenticated climate commands through mgu-uplink",
       "mguHmi": [
         "ID7"
       ],
       "artifact": {
-        "name": "remote-telemetry-bridge@0.2.20.tgz",
-        "size": 15217,
-        "sha256": "84f05fd56c041fcd89e12710af602c2a3b907345e4fcdc7e5d102d5c2316f0d7",
-        "url": "https://raw.githubusercontent.com/alexp50/bmw-apps/main/packages/remote-telemetry-bridge@0.2.20.tgz"
+        "name": "remote-telemetry-bridge@0.3.0.tgz",
+        "size": 17661,
+        "sha256": "390701235ad4094d792da2dd92f7dd82f403471292d5a78c2f64ef4a5525f1d7",
+        "url": "https://raw.githubusercontent.com/alexp50/bmw-apps/main/packages/remote-telemetry-bridge@0.3.0.tgz"
       },
       "uninstallable": true,
       "requires": {
