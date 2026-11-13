@@ -14,11 +14,12 @@ class RearControl {
         this.p = {}; this.subs = []; this.busy = false; this.seatAlive = 0;
         this.seatCancelToken = 0; this.activeSeatRequests = new Set();
         this.state = {
-            climate: { left: null, right: null, blower: null, auto: null, on: null, lock: null },
+            climate: { left: null, right: null, blower: null, auto: null, on: null, lock: null, sync: null },
             left: { heat: 0, vent: 0, massage: 0, program: 1 },
             right: { heat: 0, vent: 0, massage: 0, program: 1 },
             memory: { side: null, status: 'Waiting for BMW seat memory', requestor: null },
             seatMotion: { active: false, label: 'Ready', step: '' },
+            seatModes: { lounge: null, visibility: null },
             shades: { left: null, right: null, rear: null },
             screens: { left: null, right: null, focus: 'NO_RSE_SELECTION', display: null,
                 brightness: null, volume: null, ready: null, remote: null, apps: [] },
@@ -45,6 +46,9 @@ class RearControl {
             statusACFond2: (v) => {
                 this.state.climate.on = active(v.statusOn2Tier) || active(v.statusModeAirConditioning2Tier);
                 this.state.climate.lock = active(v.statusLock2Tier); this.touch();
+            },
+            statusACFront: (v) => {
+                this.state.climate.sync = String(v.statusSync || '') === 'SYNC_AN'; this.touch();
             },
             statusSeatHeatingDRR: (v) => { this.state.left.heat = stage(v.statusSeatHeaterDRR); this.touch(); },
             statusSeatHeatingPSR: (v) => { this.state.right.heat = stage(v.statusSeatHeaterPSR); this.touch(); },
@@ -168,6 +172,17 @@ class RearControl {
         return this.operation('Rear climate ' + (on ? 'on' : 'off'),
             () => this.signals.set(this.require('climate'), 'acFond', x));
     }
+    async setClimateSync(enabled) {
+        const x = {
+            operationScentSelectionSmell: 'SIGNAL_UNGUELTIG',
+            controlScentIntensity: 'SIGNAL_UNBEFUELLT',
+            operationAUCFront: 'SIGNAL_UNBEFUELLT',
+            operationScent: 'SIGNAL_UNBEFUELLT',
+            operationSync: enabled ? 'SYNCH_AN' : 'SYNCH_AUS'
+        };
+        return this.operation('Front-to-rear climate sync ' + (enabled ? 'on' : 'off'),
+            () => this.signals.set(this.require('climate'), 'acSpecialFunction', x));
+    }
     seatClimateValue(side, kind, level) {
         const x = {
             operationStratificationSeatHeaterDR: 8, operationStratificationSeatHeaterPS: 8,
@@ -244,30 +259,80 @@ class RearControl {
         this.state.seatMotion = { active: false, label: 'Stopped', step: '' }; this.touch();
         return 'All seat movement stopped';
     }
-    async seatPreset(side, preset) {
-        if (preset === 'relax' && side !== 'right') throw new Error('Relax mode is available for the Executive Lounge right rear seat');
-        const title = preset === 'relax' ? 'Executive Lounge relax' : 'Low profile';
+    rearSeatNativeValue(side, command) {
+        const right = side === 'right';
+        const suffix = right ? 'PSSR' : 'DRSR';
+        const value = {};
+        [
+            'operationFunctionAdjustmentLongitudinalPosition',
+            'operationFunctionAdjustmentBackrestAngle',
+            'operationFunctionAdjustmentTilt',
+            'operationFunctionAdjustmentBackrestHead',
+            'operationFunctionAdjustmentHeadrest'
+        ].forEach((name) => { value[name + suffix] = 'KEINE_AKTION'; });
+        if (right) value.operationFunctionSleepingPositionButtonPSSR = command === 'sleep' ? 'TASTE_BETAETIGT' : 'KEINE_AKTION';
+        value['operationFunctionResetButton' + suffix] = command === 'reset' ? 'TASTE_BETAETIGT' : 'KEINE_AKTION';
+        value['operationFunctionMemoryButton' + suffix] = 'KEINE_AKTION';
+        value['storeEventMemory' + suffix] = 'SIGNAL_UNBEFUELLT';
+        value['selectionSittingPositionMemory' + suffix] = 'SIGNAL_UNBEFUELLT';
+        value['requesterSittingPositionMemory' + suffix] = 'HMI';
+        return value;
+    }
+    async pulseRearSeatButton(side, command) {
+        const p = this.require('comfort');
+        const field = side === 'right' ? 'seatAdjustmentPSR' : 'seatAdjustmentDRR';
+        await this.signals.set(p, field, this.rearSeatNativeValue(side, command));
+        await pause(300);
+        await this.signals.set(p, field, this.rearSeatNativeValue(side, 'none'));
+    }
+    async loungeMode(enabled) {
+        const title = enabled ? 'Executive Lounge on' : 'Executive Lounge off';
         return this.operation(title, async () => {
+            await this.pulseRearSeatButton('right', enabled ? 'sleep' : 'reset');
+            this.state.seatModes.lounge = !!enabled;
+            this.touch();
+        });
+    }
+    async resetRearSeats() {
+        return this.operation('Reset both rear seats', async () => {
+            await Promise.all([
+                this.pulseRearSeatButton('left', 'reset'),
+                this.pulseRearSeatButton('right', 'reset')
+            ]);
+            this.state.seatModes = { lounge: false, visibility: false };
+            this.touch();
+        });
+    }
+    async visibilityMode() {
+        return this.operation('Rear visibility position', async () => {
             const token = ++this.seatCancelToken;
-            this.state.seatMotion = { active: true, label: title, step: 'Starting' }; this.touch();
-            const step = async (label, position, action, duration) => {
-                this.state.seatMotion.step = label; this.touch();
-                await this.moveSeatRaw(position, action, duration, token);
-            };
+            this.state.seatMotion = { active: true, label: 'Rear visibility position', step: 'Tucking both rear seats' };
+            this.touch();
             try {
-                if (preset === 'relax') {
-                    await step('Moving front passenger seat fully forward', 'FRONT_RIGHT', 'SEAT_ADJUSTMENT_HORIZONTAL_FRONT', 18000);
-                    await step('Reclining right rear backrest', 'REAR_RIGHT', 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 18000);
-                    await step('Extending Executive Lounge footrest', 'REAR_RIGHT', 'SEAT_ADJUSTMENT_FOOTREST_SWING_OUT', 18000);
-                } else {
-                    const position = this.seatPosition(side);
-                    await step('Lowering ' + side + ' rear backrest', position, 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 18000);
-                    await step('Lowering ' + side + ' rear headrest', position, 'SEAT_ADJUSTMENT_HEADREST_DOWN', 12000);
-                }
-                this.state.seatMotion = { active: false, label: title + ' complete', step: '' }; this.touch();
+                await Promise.all([
+                    this.moveSeatRaw('REAR_LEFT', 'SEAT_ADJUSTMENT_HORIZONTAL_BACK', 15000, token),
+                    this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_HORIZONTAL_BACK', 15000, token)
+                ]);
+                await Promise.all([
+                    this.moveSeatRaw('REAR_LEFT', 'SEAT_ADJUSTMENT_VERTICAL_DOWN', 15000, token),
+                    this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_VERTICAL_DOWN', 15000, token)
+                ]);
+                await Promise.all([
+                    this.moveSeatRaw('REAR_LEFT', 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 15000, token),
+                    this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_BACKREST_ANGLE_BACK', 15000, token)
+                ]);
+                await Promise.all([
+                    this.moveSeatRaw('REAR_LEFT', 'SEAT_ADJUSTMENT_HEADREST_DOWN', 12000, token),
+                    this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_HEADREST_DOWN', 12000, token)
+                ]);
+                this.state.seatModes.visibility = true;
+                this.state.seatModes.lounge = false;
+                this.state.seatMotion = { active: false, label: 'Visibility position complete', step: '' };
+                this.touch();
             } catch (e) {
-                this.state.seatMotion = { active: false, label: e && e.message === 'Seat movement stopped' ? 'Stopped' : title + ' interrupted', step: '' };
-                this.touch(); throw e;
+                this.state.seatMotion = { active: false, label: e && e.message === 'Seat movement stopped' ? 'Stopped' : 'Visibility position interrupted', step: '' };
+                this.touch();
+                throw e;
             }
         });
     }

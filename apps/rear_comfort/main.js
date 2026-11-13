@@ -115,7 +115,7 @@ mgu.run({ async start(ctx) {
         });
     }
     function climate(cv,t,s) {
-        sectionTitle(cv,t,'Climate comfort','Rear climate stays independent from the front climate system');
+        sectionTitle(cv,t,'Climate comfort','Rear controls stay independent; Sync applies the front settings to the rear');
         donorBackdrop(cv,t,22,132,760,348); picture(cv,'climate',38,145,728,324,'cover');
         picture(cv,'climateLeft',85,175,250,245); picture(cv,'climateRight',470,175,250,245);
         cv.text(temp(s.climate.left),210,235,46,C.cyan,{align:'center',font:'bold'});
@@ -128,13 +128,14 @@ mgu.run({ async start(ctx) {
             button(cv,t,x+216,405,100,46,'+',()=>run('Temperature',()=>rear.setClimateTemperature(which,(finite(v)?v:22)+1)),C.cyan,false);
         });
         panel(cv,t,812,132,758,348,'Rear climate control');
-        button(cv,t,838,184,222,55,'CLIMATE ON',()=>run('Rear climate on',()=>rear.climatePower(true)),C.green,!!s.climate.on);
-        button(cv,t,1076,184,222,55,'OFF',()=>run('Rear climate off',()=>rear.climatePower(false)),C.red,s.climate.on===false);
-        button(cv,t,1314,184,222,55,'AUTO',()=>run('Rear automatic',()=>rear.setClimateMode(true)),C.orange,!!s.climate.auto);
+        button(cv,t,838,184,160,55,'CLIMATE ON',()=>run('Rear climate on',()=>rear.climatePower(true)),C.green,!!s.climate.on);
+        button(cv,t,1012,184,160,55,'OFF',()=>run('Rear climate off',()=>rear.climatePower(false)),C.red,s.climate.on===false);
+        button(cv,t,1186,184,160,55,'AUTO',()=>run('Rear automatic',()=>rear.setClimateMode(true)),C.orange,!!s.climate.auto);
+        button(cv,t,1360,184,160,55,'SYNC',()=>run('Climate sync',()=>rear.setClimateSync(!s.climate.sync)),C.blue,!!s.climate.sync);
         cv.text('Rear blower',840,285,19,t.dim,{font:'bold'}); cv.text(finite(s.climate.blower)?String(s.climate.blower):'--',1035,295,40,C.cyan,{align:'center',font:'bold'});
         button(cv,t,838,320,190,52,'LOWER',()=>run('Rear blower',()=>rear.setBlower(Math.max(1,(s.climate.blower||2)-1))),C.cyan,false);
         button(cv,t,1044,320,190,52,'RAISE',()=>run('Rear blower',()=>rear.setBlower(Math.min(9,(s.climate.blower||2)+1))),C.cyan,false);
-        cv.text('Front climate is never switched off by this page.',838,423,17,t.dim);
+        cv.text('Sync is front to rear. Rear controls never command the front zones.',838,423,17,t.dim);
     }
     function seatSetting(cv,t,s) {
         const commonParts=[
@@ -159,20 +160,21 @@ mgu.run({ async start(ctx) {
         panel(cv,t,22,132,390,348,'Choose rear seat');
         button(cv,t,42,176,168,50,'LEFT REAR',setSide('left'),C.orange,side==='left');
         button(cv,t,222,176,168,50,'RIGHT REAR',setSide('right'),C.orange,side==='right');
-        cv.text('ONE-TOUCH POSITIONS',42,254,15,t.dim,{font:'bold'});
-        button(cv,t,42,267,168,50,'LOW PROFILE',()=>run('Low profile',()=>rear.seatPreset(side,'low')),C.orange2,false);
-        if(side==='right') button(cv,t,222,267,168,50,'RELAX MODE',()=>run('Relax mode',()=>rear.seatPreset('right','relax')),C.orange,false);
-        else button(cv,t,222,267,168,50,'COMFORT',()=>run('Comfort position',()=>rear.recallSeatMemory('left',1)),C.orange,false);
-        button(cv,t,42,329,348,45,'STOP ALL MOVEMENT',()=>run('Stop seats',()=>rear.stopSeatMovement()),C.red,!!s.seatMotion.active);
-        cv.text('RECALL MEMORY',42,400,14,t.dim,{font:'bold'});
-        [1,2,3].forEach((slot,i)=>button(cv,t,42+i*76,412,68,43,String(slot),()=>run('Recall memory '+slot,()=>rear.recallSeatMemory(side,slot)),C.orange,false));
-        cv.text('SAVE',278,400,14,t.dim,{font:'bold'});
-        [1,2,3].forEach((slot,i)=>button(cv,t,278+i*37,412,32,43,String(slot),()=>run('Store memory '+slot,()=>rear.storeSeatMemory(side,slot)),C.orange2,false));
+        cv.text('ONE-TOUCH POSITIONS',42,244,15,t.dim,{font:'bold'});
+        button(cv,t,42,255,168,43,'VISIBILITY',()=>run('Visibility position',()=>rear.visibilityMode()),C.orange2,!!s.seatModes.visibility);
+        button(cv,t,222,255,168,43,'RESET BOTH',()=>run('Reset rear seats',()=>rear.resetRearSeats()),C.orange,false);
+        button(cv,t,42,306,168,43,'LOUNGE ON',()=>run('Lounge on',()=>rear.loungeMode(true)),C.orange,!!s.seatModes.lounge);
+        button(cv,t,222,306,168,43,'LOUNGE OFF',()=>run('Lounge off',()=>rear.loungeMode(false)),C.orange2,s.seatModes.lounge===false);
+        button(cv,t,42,357,348,38,'STOP ALL MOVEMENT',()=>run('Stop seats',()=>rear.stopSeatMovement()),C.red,!!s.seatMotion.active);
+        cv.text('RECALL MEMORY',42,414,14,t.dim,{font:'bold'});
+        [1,2,3].forEach((slot,i)=>button(cv,t,42+i*76,425,68,38,String(slot),()=>run('Recall memory '+slot,()=>rear.recallSeatMemory(side,slot)),C.orange,false));
+        cv.text('SAVE',278,414,14,t.dim,{font:'bold'});
+        [1,2,3].forEach((slot,i)=>button(cv,t,278+i*37,425,32,38,String(slot),()=>run('Store memory '+slot,()=>rear.storeSeatMemory(side,slot)),C.orange2,false));
 
         donorBackdrop(cv,t,430,132,550,348);
+        // The movement artwork is a complete scene. Layering it over the selected
+        // seat creates a double image, so render one side-specific scene only.
         picture(cv,side==='left'?'seatLeft':'seatRight',455,143,500,300);
-        const movement={seat:'motionSeat',height:'motionSeat',tilt:'motionSeat',back:'motionBack',shoulder:'motionBack',depth:'motionSeat',head:'motionHead',lumbar:'motionLumbar',foot:'motionFoot',front:'seatPassenger'}[positionPart];
-        if(movement) picture(cv,movement,455,143,500,300);
         cv.roundRect(448,421,514,43,4,withAlpha('#000000',0.68));
         cv.text((side==='left'?'LEFT REAR  |  ':'RIGHT REAR  |  ')+selectedPart[1],705,448,19,C.orange,{align:'center',font:'bold'});
         if(s.seatMotion.active) cv.text(short(s.seatMotion.step||s.seatMotion.label,58),705,474,14,C.green,{align:'center'});
