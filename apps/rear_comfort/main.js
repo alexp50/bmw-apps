@@ -38,7 +38,7 @@ try {
 
 mgu.run({ async start(ctx) {
     let page = 0, selected = 0, side = 'right', notice = '', noticeGood = false;
-    let hits = [], actions = [], positionPart = 'seat';
+    let hits = [], actions = [], holdHits = [], activeHold = null, positionPart = 'seat';
     const rear = new RearControl(ctx.signals, ctx.log, () => {});
 
     function run(label, fn) {
@@ -59,6 +59,34 @@ mgu.run({ async start(ctx) {
         cv.roundRect(x, y, w, h, 7, on ? color : withAlpha(color, focus ? 0.25 : 0.09));
         cv.strokeRoundRect(x + 1, y + 1, w - 2, h - 2, 7, focus ? 3 : 1, focus ? '#ffffff' : withAlpha(color, 0.58));
         cv.text(label, x + w / 2, y + h / 2 + 7, 18, on ? '#11151a' : color, { align:'center', font:'bold' });
+        return i;
+    }
+    function heldSeatButton(cv,t,x,y,w,h,label,seatSide,seatAction,position,color) {
+        const tap = () => run(label, () => rear.moveSeat(seatSide, seatAction, 900, position));
+        const i = button(cv,t,x,y,w,h,label,tap,color,false);
+        const hit = { x,y,w,h };
+        hit.down = () => {
+            selected = i;
+            activeHold = hit;
+            notice = label + ' - hold to move'; noticeGood = false;
+            Promise.resolve().then(() => rear.moveSeat(seatSide, seatAction, 30000, position)).then((message) => {
+                if (activeHold === hit) {
+                    notice = message || label + ' complete'; noticeGood = true;
+                }
+            }).catch((e) => {
+                if (e && e.message === 'Seat movement stopped') return;
+                notice = short(e && e.message || e, 105); noticeGood = false; ctx.log.warn(notice);
+            });
+        };
+        hit.up = () => {
+            activeHold = null;
+            Promise.resolve(rear.stopSeatMovement()).then(() => {
+                notice = label + ' stopped'; noticeGood = true;
+            }).catch((e) => {
+                notice = short(e && e.message || e, 105); noticeGood = false; ctx.log.warn(notice);
+            });
+        };
+        holdHits.push(hit);
     }
     function panel(cv, t, x, y, w, h, label) {
         cv.roundRect(x, y, w, h, 5, withAlpha(t.text, 0.035));
@@ -187,14 +215,14 @@ mgu.run({ async start(ctx) {
         });
         if(positionPart==='lumbar'){
             const y=414;
-            button(cv,t,1016,y,126,48,'UP',()=>run('Lumbar up',()=>rear.moveSeat(side,'LUMBAR_UP')),C.orange,false);
-            button(cv,t,1150,y,126,48,'DOWN',()=>run('Lumbar down',()=>rear.moveSeat(side,'LUMBAR_DOWN')),C.orange,false);
-            button(cv,t,1288,y,126,48,'FIRMER',()=>run('Lumbar firmer',()=>rear.moveSeat(side,'LUMBAR_INFLATE')),C.orange,false);
-            button(cv,t,1422,y,126,48,'SOFTER',()=>run('Lumbar softer',()=>rear.moveSeat(side,'LUMBAR_DEFLATE')),C.orange,false);
+            heldSeatButton(cv,t,1016,y,126,48,'UP',side,'LUMBAR_UP',undefined,C.orange);
+            heldSeatButton(cv,t,1150,y,126,48,'DOWN',side,'LUMBAR_DOWN',undefined,C.orange);
+            heldSeatButton(cv,t,1288,y,126,48,'FIRMER',side,'LUMBAR_INFLATE',undefined,C.orange);
+            heldSeatButton(cv,t,1422,y,126,48,'SOFTER',side,'LUMBAR_DEFLATE',undefined,C.orange);
         } else {
             const position=positionPart==='front'?'FRONT_RIGHT':undefined;
-            button(cv,t,1016,414,258,48,selectedPart[2],()=>run(selectedPart[2],()=>rear.moveSeat(side,selectedPart[4],900,position)),C.orange,false);
-            button(cv,t,1288,414,260,48,selectedPart[3],()=>run(selectedPart[3],()=>rear.moveSeat(side,selectedPart[5],900,position)),C.orange,false);
+            heldSeatButton(cv,t,1016,414,258,48,selectedPart[2],side,selectedPart[4],position,C.orange);
+            heldSeatButton(cv,t,1288,414,260,48,selectedPart[3],side,selectedPart[5],position,C.orange);
         }
     }
     function massage(cv,t,s) {
@@ -255,7 +283,7 @@ mgu.run({ async start(ctx) {
         remoteButton(1360,362,'PLAY','command','PLAY');
     }
     async function render(){
-        const t=ctx.theme(),cv=ctx.canvas(W,H).clear('#0d1015'),s=rear.state;hits=[];actions=[];
+        const t=ctx.theme(),cv=ctx.canvas(W,H).clear('#0d1015'),s=rear.state;hits=[];actions=[];holdHits=[];
         [overview,climate,seatSetting,massage,seatClimate,shades,screens][page](cv,t,s);
         selected=actions.length?Math.max(0,Math.min(selected,actions.length-1)):0;
         G.frame(cv,t,PAGES,page,[{text:'TOUCH COMMAND',color:C.orange},{text:rear.busy?'WORKING':'LIVE',color:rear.busy?C.orange2:C.green},{text:'60 FPS',color:C.cyan}]);
@@ -268,6 +296,19 @@ mgu.run({ async start(ctx) {
     ctx.ui.onClick('BTN_ACTION',()=>{if(actions[selected])actions[selected].fn();});
     ctx.ui.onClick('BTN_BACK',()=>setPage(0));
     ctx.onTab((i)=>setPage(i));
+    ctx.onTouch((phase,x,y)=>{
+        if(phase===1){
+            const h=holdHits.find(v=>x>=v.x&&x<v.x+v.w&&y>=v.y&&y<v.y+v.h);
+            if(!h) return false;
+            activeHold=h; h.down(); return true;
+        }
+        if(!activeHold) return false;
+        if(phase===3){
+            const h=activeHold;
+            h.up();
+        }
+        return true;
+    });
     ctx.onTap((x,y)=>{const h=hits.find(v=>x>=v.x&&x<v.x+v.w&&y>=v.y&&y<v.y+v.h);if(h)h.fn();});
     ctx.loop('MAIN',60,render); await rear.init();
 } });

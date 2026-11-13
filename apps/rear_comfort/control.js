@@ -318,9 +318,30 @@ class RearControl {
     async loungeMode(enabled) {
         const title = enabled ? 'Executive Lounge on' : 'Executive Lounge off';
         return this.operation(title, async () => {
-            await this.pulseRearSeatButton('right', enabled ? 'sleep' : 'reset');
-            this.state.seatModes.lounge = !!enabled;
+            const token = ++this.seatCancelToken;
+            this.state.seatMotion = {
+                active: true,
+                label: title,
+                step: enabled ? 'Moving front passenger seat fully forward' : 'Retracting the Executive Lounge footrest'
+            };
             this.touch();
+            try {
+                if (enabled) {
+                    await this.moveSeatRaw('FRONT_RIGHT', 'SEAT_ADJUSTMENT_HORIZONTAL_FRONT', 20000, token);
+                    this.state.seatMotion.step = 'Lowering the Executive Lounge footrest'; this.touch();
+                    await this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_FOOTREST_SWING_OUT', 14000, token);
+                    this.state.seatMotion.step = 'Reclining the right rear seat'; this.touch();
+                    await this.pulseRearSeatButton('right', 'sleep');
+                } else {
+                    await this.moveSeatRaw('REAR_RIGHT', 'SEAT_ADJUSTMENT_FOOTREST_RETRACT', 14000, token);
+                    this.state.seatMotion.step = 'Returning the right rear seat'; this.touch();
+                    await this.pulseRearSeatButton('right', 'reset');
+                }
+                this.state.seatModes.lounge = !!enabled;
+            } finally {
+                this.state.seatMotion = { active: false, label: 'Ready', step: '' };
+                this.touch();
+            }
         });
     }
     async resetRearSeats() {
