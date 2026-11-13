@@ -176,17 +176,17 @@
     {
       "id": "rear_comfort",
       "kind": "app",
-      "version": "0.5.2",
+      "version": "0.5.5",
       "title": "Rear Comfort",
       "description": "G12 Executive Lounge control for rear climate, comfort seats, massage, shades and entertainment",
       "mguHmi": [
         "ID7"
       ],
       "artifact": {
-        "name": "rear_comfort@0.5.2.tgz",
-        "size": 5615429,
-        "sha256": "22035afb7689cd9be2caab448c5019640fe712b6b0a44710dee8786638eb4851",
-        "url": "https://github.com/alexp50/bmw-apps/releases/download/rear_comfort@0.5.2/rear_comfort@0.5.2.tgz"
+        "name": "rear_comfort@0.5.5.tgz",
+        "size": 5623719,
+        "sha256": "ccd9a4b6fd948c8f3ee70f512b2fd563b8aee7520b633f8bcdb31382175a9044",
+        "url": "https://github.com/alexp50/bmw-apps/releases/download/rear_comfort@0.5.5/rear_comfort@0.5.5.tgz"
       },
       "uninstallable": true,
       "requires": {
