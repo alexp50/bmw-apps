@@ -3,6 +3,30 @@
   "name": "AlexP50 BMW Apps",
   "components": [
     {
+      "id": "adas_feature_probe",
+      "kind": "app",
+      "version": "0.1.0",
+      "title": "ADAS Feature Probe",
+      "description": "Live BMW availability and ECU-state probe for acoustic collision warning, driveaway prevention and Close Passing Assistant",
+      "mguHmi": [
+        "ID7"
+      ],
+      "artifact": {
+        "name": "adas_feature_probe@0.1.0.tgz",
+        "size": 1096164,
+        "sha256": "92ab55cf93999e990a4ab716657360f82de8bbac486d5de21d2d08a668bcda7e",
+        "url": "https://github.com/alexp50/bmw-apps/releases/download/adas_feature_probe@0.1.0/adas_feature_probe@0.1.0.tgz"
+      },
+      "uninstallable": true,
+      "requires": {
+        "idrive7-renderd": "2.1.7",
+        "mgu-inputgate": "1.0.0"
+      },
+      "author": "alexp50",
+      "icon": "adas_feature_probe.png",
+      "iconSha256": "81d062a41d853e7aa1421a36da42095103b5a7db38373303c4f217590e0f3560"
+    },
+    {
       "id": "ambient_studio_full",
       "kind": "app",
       "version": "0.1.5",

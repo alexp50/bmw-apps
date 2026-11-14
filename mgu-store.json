@@ -1,5 +1,12 @@
 {
   "apps": {
+    "adas_feature_probe": {
+      "title": "ADAS Feature Probe",
+      "description": "Live BMW availability and ECU-state probe for acoustic collision warning, driveaway prevention and Close Passing Assistant",
+      "author": "alexp50",
+      "icon": "adas_feature_probe.png",
+      "iconSha256": "81d062a41d853e7aa1421a36da42095103b5a7db38373303c4f217590e0f3560"
+    },
     "ambient_studio_full": {
       "title": "Ambient Studio",
       "description": "Full-screen drive-mode colours and rate-limited ambient-light alerts",
