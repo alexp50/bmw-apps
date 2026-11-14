@@ -660,11 +660,12 @@ class Display {
             });
             return Promise.resolve();
         }
-        // Standard/software layout: keep the rightmost 96 px free for the DEMO badge.
+        // Standard/software layout: place credit between the app tabs and status badges.
         // Full-screen GPU layout draws it below the native status strip in _drawChrome.
         if (!(r.chrome && this.active() && this.place.full) && !r._cnStamped) {
             r.xf().noclip();
-            drawCredit(r, r.w - 96, 25);
+            const bounds = r.creditBounds || { left: 0, right: r.w - 96 };
+            drawCredit(r, bounds.right, 25, bounds.left);
             r._cnStamped = true;
         }
         // the app's page reaches down or not (never a sheet's frame): _place starts from it

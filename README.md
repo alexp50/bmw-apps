@@ -1,5 +1,7 @@
 # AlexP50 BMW iDrive 7 Apps
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 Full-screen apps for BMW MGU / iDrive 7, packaged for [Robert Nisipeanu's MGU Store](https://github.com/robertnisipeanu/mgu-store).
 
 ## Install from the Store
@@ -69,6 +71,18 @@ The iDrive knob, press and directional push are shared by every app through the 
 On some ID7 units the digital-video surface `0x198` remains marked visible even when it has no buffer. Older `mgu-render` builds then yield every custom-app layer to that empty surface, so unrelated apps all open blank. Run `tools/Repair-MGU-Rendering.ps1`; it excludes only that empty surface in the persistent local renderer configuration and restarts the renderer service without restarting the HMI or changing ECU coding.
 
 ## Build and validate
+
+The default builds in this repository use English. To build a Simplified Chinese
+app from source, supply your own local `oap-sdk/` and select `--language zh-CN`:
+
+```sh
+python3 kit/tools/build.py --language zh-CN road_trip_computer vehicle_health telemetry_studio parking_clearance
+```
+
+Simplified Chinese translation by 小白151 (JackieZ123430). See the
+[Chinese guide](README.zh-CN.md) for the supported apps, full credit and build details.
+The Chinese atlas uses Noto Sans SC under the
+[SIL Open Font License](kit/runtime/fonts/OFL-NotoSansSC.txt).
 
 ```powershell
 python kit/tools/build.py adas_feature_probe ambient_studio_full dpf_monitor drive_hud_full front_camera_cluster green_light_alert hotspot_studio parking_clearance ride_height road_trip_computer start_stop_insight telemetry_studio vehicle_health vehicle_network waze_hud xdrive_studio

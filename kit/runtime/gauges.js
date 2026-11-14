@@ -694,7 +694,8 @@ function frame(cv, t, tabs, sel, badges) {
         if (i < tabs.length - 1) cv.fillRect(x + tw, 9, 1, BAR_H - 18, withAlpha('#ffffff', 0.12));
         x += tw;
     });
-    badgeRow(cv, t, W - 16, 6, 24, 18, (badges || []).filter(Boolean));
+    const badgeLeft = badgeRow(cv, t, W - 16, 6, 24, 18, live);
+    cv.creditBounds = { left: x + 8, right: badgeLeft - 12 };
 }
 
 /** Badges right-aligned at xr (right edge), top y, height h, text size. Returns the left edge. */

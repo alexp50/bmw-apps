@@ -324,7 +324,7 @@ def make_icon(spec, out):
 WIDGET_COMPONENT_ID = 501
 
 
-def build_start_widget(spec, app_id, icon_src, out):
+def build_start_widget(spec, app_id, icon_src, out, pkg_out):
     """app.json "startWidget" -> rhmiDataStartWidget/ (installed format), the home-screen widget.
 
     Same shape as BMW's own widgets on this firmware (Drive Recorder, Weather, News): a logical
@@ -364,12 +364,30 @@ def build_start_widget(spec, app_id, icon_src, out):
     for lang in LANGS:
         json.dump({sid_name: name}, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(icon_src, os.path.join(out, 'resources', icon))
+    if pkg_out:
+        shutil.rmtree(pkg_out, ignore_errors=True)
+        os.makedirs(os.path.join(pkg_out, 'uiDescriptions', 'ID7'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'images'))
+        a = app_json['application']
+        pj = {'schemaVersion': app_json['schemaVersion'], 'application': {k: a[k] for k in (
+            'uuid', 'type', 'name', 'vendor', 'version', 'defaultLanguage', 'stringBundleUuid', 'resourceBundleUuid', 'entryPoints')}}
+        pj['application']['uiDescriptions'] = [{'applicationFilePath': './uiDescriptions/ID7/application.xml',
+                                                'uiDescriptionFilePath': './uiDescriptions/ID7/uiDescription.json', 'hmi': ['ID7']}]
+        pj['application']['variantGroups'] = [{'stringsPath': './variantGroups/Common/texts',
+                                               'resourcesPath': './variantGroups/Common/images', 'hmi': ['ID7'], 'brands': ['BMW']}]
+        json.dump(pj, open(os.path.join(pkg_out, 'application.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
+        open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
+        json.dump(ui, open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+        for lang in LANGS:
+            json.dump({sid_name: name}, open(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+        shutil.copy(icon_src, os.path.join(pkg_out, 'variantGroups', 'Common', 'images', icon))
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
-def build(app_id, language='en'):
+def build(app_id, language='en', *, keep_version=False):
     spec = json.load(open(os.path.join(APPS, app_id, 'app.json'), encoding='utf-8'))
-    spec = localize_spec(spec, language)
+    spec = localize_spec(spec, language, keep_version=keep_version)
     spec.setdefault('id', app_id)
     ver = spec['version']
     stage = os.path.join(DIST, app_id)
@@ -440,10 +458,10 @@ def build(app_id, language='en'):
         else:
             shutil.copy(p, os.path.join(src, 'javascript', 'kit', f))
     if language == 'zh-CN':
-        # Diagnostic glyphs are Chinese-only; keep the English runtime atlas intact.
-        if app_id == 'dtc_scanner':
-            shutil.copy(os.path.join(KIT, 'localization', 'fonts', 'diagnostic-zh-CN.json'),
-                        os.path.join(src, 'javascript', 'kit', 'fonts', 'cjk.json'))
+        # Keep the English runtime atlas intact.
+        atlas = 'diagnostic-zh-CN.json' if app_id == 'dtc_scanner' else 'alexp50-zh-CN.json'
+        shutil.copy(os.path.join(KIT, 'localization', 'fonts', atlas),
+                    os.path.join(src, 'javascript', 'kit', 'fonts', 'cjk.json'))
         # The translation credit in the installed Chinese entry code, as plain comments.
         entry = os.path.join(src, 'javascript', 'app.js')
         credit = ''.join('// %s\n' % line for line in zh_credit()['comment'])
@@ -510,7 +528,8 @@ def build(app_id, language='en'):
         json.dump(strings, open(os.path.join(ir, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(os.path.join(pr, 'variantGroups', 'Common', 'images', icon), os.path.join(ir, 'resources', icon))
     if spec.get('startWidget'):
-        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'))
+        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'),
+                                  os.path.join(src, 'rhmiDataStartWidget'))
         print('  home-screen widget: %s (%s)' % (info['component'], info['layout']))
 
     # --- installer helpers + metadata ---
@@ -541,11 +560,13 @@ def main():
     import argparse
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--language', choices=languages(), default='en')
+    parser.add_argument('--keep-version', action='store_true',
+                        help='Match app.json exactly for a Store source build')
     parser.add_argument('apps', nargs='*')
     args = parser.parse_args()
     ids = args.apps or sorted(d for d in os.listdir(APPS) if os.path.exists(os.path.join(APPS, d, 'app.json')))
     for i in ids:
-        build(i, args.language)
+        build(i, args.language, keep_version=args.keep_version)
 
 
 if __name__ == '__main__':

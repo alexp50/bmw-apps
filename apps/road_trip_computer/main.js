@@ -50,6 +50,7 @@ const G = require('./kit/gauges');
 const { Canvas, withAlpha } = require('./kit/canvas');
 const { Recorder, play } = require('./kit/record');
 const { fitText } = require('./kit/text-layout');
+const { t: translate, getLanguage } = require('./kit/i18n');
 const { ReadOnlyDiag, MAX_DIDS } = require('./kit/readonly-diag');
 const { hex, NRC } = require('./kit/diag');
 const { decode, format, split, SIZE } = require('./kit/sgbd');
@@ -1264,7 +1265,7 @@ mgu.run({
                 if (tr.fuelEstimated) cv.text('fuel estimated from ' + String(tr.fuelSource || 'vehicle data').replace(/ estimate$/, ''), 1552, 88, 20, t.warn, { align: 'right' });
                 else if (tr.noFuelMs > 60000 && !tr.l) cv.text('waiting for fuel data', 1552, 88, 20, t.warn, { align: 'right' });
             }
-            G.panel(cv, t, 24, 260, 1552, 252, 'Last ' + TRIPS.KEEP + ' trips');
+            G.panel(cv, t, 24, 260, 1552, 252, recentTripsTitle());
             const cols = [{ label: 'Started', w: 240 }, { label: 'Time', w: 130, align: 'right' }, { label: 'Distance', w: 190, align: 'right' },
                 { label: 'Fuel', w: 170, align: 'right' }, { label: 'l/100 km', w: 170, align: 'right' }, { label: 'Cost', w: 240, align: 'right' },
                 { label: 'Top speed', w: 180, align: 'right' }, { label: 'Tank', w: 184, align: 'right' }];
@@ -1274,6 +1275,9 @@ mgu.run({
                     c === null ? '--' : f2(c) + ' ' + cu, Math.round(x.vmax) + ' km/h', x.tank0 !== null ? x.tank0 + ' - ' + x.tank1 + ' l' : '--'];
             });
             G.table(cv, t, 48, 316, 1504, cols, rows, { rowH: 32, size: 22, empty: 'No finished trip yet' });
+        }
+        function recentTripsTitle() {
+            return translate('Last {count} trips').replace('{count}', String(TRIPS.KEEP));
         }
         function drawTotals(cv, t, now, cu) {
             G.panel(cv, t, 24, 52, 1552, 300, 'Totals');
@@ -1285,7 +1289,7 @@ mgu.run({
             };
             const rows = [
                 row('This trip', cur ? { n: 1, km: cur.km, l: cur.l, cost: tc.cost(cur) } : null),
-                row('Last ' + TRIPS.KEEP + ' trips', tc.total('last', now)),
+                row(recentTripsTitle(), tc.total('last', now)),
                 row('Today', tc.total('today', now)),
                 row('Last 7 days', tc.total('week', now)),
                 row('Last 30 days', tc.total('month', now)),
@@ -1372,9 +1376,11 @@ mgu.run({
             // [this page's tab?, label, key]
             const tabs = [[pg.group === 'gauges', pg.screen ? (pg.blank ? 'New screen' : 'Gauges' + pp(pg)) : 'Gauges', 'gauges']];
             if (tripsOn()) tabs.push([pg.group === 'trips', 'Trips', 'trips']);
+            const units = getLanguage() === 'zh-CN' ? translate('Control units') : 'Units';
+            const unit = getLanguage() === 'zh-CN' ? translate('Control unit') : 'Unit';
             tabs.push([pg.group === 'signals', 'Signals' + (pg.group === 'signals' ? pp(pg) : ''), 'signals'],
                 [pg.group === 'engine', 'Engine' + (pg.group === 'engine' ? pp(pg) : ''), 'engine'],
-                [pg.group === 'units', pg.group === 'units' && pg.unit ? ECU[pg.unit.addr] ? ECU[pg.unit.addr].split(' ')[0] + pp(pg) : 'Unit' + pp(pg) : 'Units', 'units']);
+                [pg.group === 'units', pg.group === 'units' && pg.unit ? ECU[pg.unit.addr] ? ECU[pg.unit.addr].split(' ')[0] + pp(pg) : unit + pp(pg) : units, 'units']);
             tabKeys = tabs.map((x) => x[2]);
             const isDemo = (x) => (x.isSig ? !(x.sig && x.sig.tc) && sigDemo() : !!(x.unit && x.unit.demo));      // the trip computer's: always the car's
             const demoNow = pg.group === 'trips' ? false : pg.screen ? screenItems(pg.screen).some(isDemo) : pg.group === 'signals' ? sigDemo()

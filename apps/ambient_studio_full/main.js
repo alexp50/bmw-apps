@@ -3,6 +3,7 @@ const mgu = require('./kit/mgu');
 const G = require('./kit/gauges');
 const D = require('./catalog');
 const { Controller } = require('./controller');
+const { t: translate } = require('./kit/i18n');
 
 const W = 1600, H = 520;
 const C = { bg: '#0d1119', panel: '#1b2431', text: '#f3f6f9', dim: '#aebdca',
@@ -10,11 +11,14 @@ const C = { bg: '#0d1119', panel: '#1b2431', text: '#f3f6f9', dim: '#aebdca',
 const NAME = { BLUE: 'Blue', RED: 'Red', GREEN: 'Green', ORANGE: 'Orange' };
 const COLOR = { BLUE: C.blue, RED: C.red, GREEN: C.green, ORANGE: C.orange };
 const pages = ['Overview', 'Palette', 'Alerts', 'Signals'];
-const short = (x, n) => String(x || '').length > n ? String(x).slice(0, n - 3) + '...' : String(x || '');
+const short = (value, limit) => {
+    const text = translate(value || '');
+    return text.length > limit ? text.slice(0, limit - 3) + '...' : text;
+};
 
 mgu.run({ async start(ctx) {
     let page = 0, selected = 0, closed = false, actions = [], hits = [];
-    const controller = new Controller(ctx, redraw);
+    const controller = new Controller(ctx, redraw, translate);
     function redraw() { if (!closed && ctx.ui.isVisible('MAIN'))
         render().catch((e) => ctx.log.error('Ambient Studio screen', e)); }
     async function act(fn) {
@@ -73,7 +77,8 @@ mgu.run({ async start(ctx) {
             cv.text(NAME[key].toUpperCase(), x + 20, 273, 24, COLOR[key], { font: 'bold' });
             cv.text(controller.palette[key] ? 'Slot ' + controller.palette[key] : 'Not learned',
                 x + 20, 318, 34, C.text, { font: 'bold' });
-            button(cv, x, 366, 372, 62, 'Learn ' + NAME[key], () => controller.learnColor(key), COLOR[key]);
+            button(cv, x, 366, 372, 62, controller.message('Learn {colour}', { colour: translate(NAME[key]) }),
+                () => controller.learnColor(key), COLOR[key]);
         });
         button(cv, 1050, 448, 518, 54, 'Clear learned colours', () => controller.clearPalette(), C.red);
         cv.text(short(controller.notice || 'Each slot is specific to this car; no colour number is guessed.', 70),
@@ -85,8 +90,10 @@ mgu.run({ async start(ctx) {
         cv.text('HAZARDS', 54, 177, 24, C.orange, { font: 'bold' });
         cv.text('Signal: ' + (controller.hazard === null ? 'not learned / unknown' :
             controller.hazard ? 'ON' : 'OFF'), 54, 220, 28, C.text);
-        cv.text('OFF ' + (controller.hazardLearn.off ? 'learned' : 'missing') +
-            '   ON ' + (controller.hazardLearn.on ? 'learned' : 'missing'),
+        cv.text(controller.message('OFF {off}   ON {on}', {
+            off: translate(controller.hazardLearn.off ? 'learned' : 'missing'),
+            on: translate(controller.hazardLearn.on ? 'learned' : 'missing')
+        }),
             54, 265, 23, C.dim);
         button(cv, 54, 280, 710, 52, controller.hazardEnabled ? 'Disable hazard alert' :
             'Enable hazard alert', () => controller.setHazardEnabled(!controller.hazardEnabled), C.orange);

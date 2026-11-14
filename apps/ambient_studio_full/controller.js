@@ -7,8 +7,9 @@ const MIN_WRITE_MS = 1200;
 const FLASH_MS = 1500;
 
 class Controller {
-    constructor(ctx, changed) {
+    constructor(ctx, changed, translate = (text) => text) {
         this.ctx = ctx; this.changed = changed || (() => {});
+        this.translate = translate;
         this.file = path.join(ctx.dataDir, 'ambient-studio.json');
         this.palette = {}; this.modeEnabled = false; this.hazardEnabled = false; this.doorEnabled = false;
         this.hazardLearn = { off: null, on: null };
@@ -18,6 +19,9 @@ class Controller {
         this.lastWriteAt = 0; this.lastWrite = 'none'; this.notice = ''; this.flashOn = true;
         this.alertRestore = null; this.lastNormalColor = null;
         this.load();
+    }
+    message(key, values) {
+        return this.translate(key).replace(/\{(\w+)\}/g, (_, name) => String(values[name]));
     }
     load() {
         try {
@@ -40,7 +44,10 @@ class Controller {
     learnColor(name) {
         if (D.SEMANTIC.indexOf(name) < 0) throw new Error('Unknown named colour');
         if (!D.COLORS.some((c) => c.value === this.color)) throw new Error('No factory colour is currently reported');
-        this.palette[name] = this.color; this.save(); this.notice = name[0] + name.slice(1).toLowerCase() + ' learned as factory slot ' + this.color;
+        this.palette[name] = this.color; this.save();
+        this.notice = this.message('{colour} learned as factory slot {slot}', {
+            colour: this.translate(name[0] + name.slice(1).toLowerCase()), slot: this.color
+        });
         this.request(); this.changed();
     }
     clearPalette() { this.palette = {}; this.modeEnabled = false; this.hazardEnabled = false; this.doorEnabled = false; this.save(); this.request(); this.changed(); }
@@ -53,7 +60,8 @@ class Controller {
         if (which !== 'off' && which !== 'on') throw new Error('Unknown hazard learning state');
         if (!this.hazardRaw) throw new Error('No LampExterior2 special-flashing value has been received');
         this.hazardLearn[which] = this.hazardRaw; this.save(); this.recomputeHazard();
-        this.notice = 'Hazards ' + which.toUpperCase() + ' signal learned'; this.changed();
+        this.notice = this.message('Hazards {state} signal learned', { state: this.translate(which.toUpperCase()) });
+        this.changed();
     }
     setHazardEnabled(on) {
         if (on && !this.palette.ORANGE) throw new Error('Learn Orange first');
@@ -164,12 +172,17 @@ class Controller {
     status() {
         if (this.notice) return this.notice;
         const alert = this.activeAlert();
-        if (alert) return alert.label + ' alert active; ' + (this.flashOn ? 'alert colour' : 'normal colour') + ' phase';
+        if (alert) return this.message('{alert} alert active; {phase} phase', {
+            alert: this.translate(alert.label), phase: this.translate(this.flashOn ? 'alert colour' : 'normal colour')
+        });
         if (!this.paletteReady()) return 'Learn the four physical colours; no automatic writes are enabled';
         if (!this.modeEnabled) return 'Drive-mode colours disabled; vehicle lighting is unchanged';
         if (!this.mode) return 'Enabled; waiting for the current driving mode';
         const semantic = D.MODE_COLOURS[this.mode.name];
-        return semantic ? this.mode.label + ' follows ' + semantic[0] + semantic.slice(1).toLowerCase() : this.mode.label + ' is intentionally left unchanged';
+        const mode = this.translate(this.mode.label);
+        return semantic ? this.message('{mode} follows {colour}', {
+            mode, colour: this.translate(semantic[0] + semantic.slice(1).toLowerCase())
+        }) : this.message('{mode} is intentionally left unchanged', { mode });
     }
     close() {
         if (this.closed) return; this.closed = true; clearInterval(this.poll); clearInterval(this.flash);

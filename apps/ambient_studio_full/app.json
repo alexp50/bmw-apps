@@ -47,6 +47,10 @@
         [
           "BTN_BACK",
           "Overview"
+        ],
+        [
+          "BTN_SETTINGS",
+          "Settings"
         ]
       ]
     }
