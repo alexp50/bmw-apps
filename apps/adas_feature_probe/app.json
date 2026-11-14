@@ -1,0 +1,55 @@
+{
+  "id": "adas_feature_probe",
+  "title": "ADAS Feature Probe",
+  "description": "Live BMW availability and ECU-state probe for acoustic collision warning, driveaway prevention and Close Passing Assistant",
+  "version": "0.1.0",
+  "vendor": "alexp50",
+  "loggingId": "OAB9",
+  "iconGlyph": "ADAS",
+  "signals": {
+    "de.bmw.dass.settingsdriverassistancefunctions.SettingsDriverAssistanceFunctions": {
+      "settingFrontCollisionWarningSound": "sw",
+      "settingCrossTrafficBrake": "sw",
+      "settingCrossTrafficBrakeWithBraking": "sw",
+      "settingNarrowPassageAssistant": "sw"
+    },
+    "de.bmw.infotainment.fasus.FASuS": {
+      "statusIDriveFAS": "rs",
+      "statusIDriveFASExtended": "rs"
+    }
+  },
+  "screens": [
+    {
+      "name": "MAIN",
+      "kind": "canvas",
+      "title": "ADAS Feature Probe",
+      "buttons": [
+        ["BTN_SELECT", "Select feature"],
+        ["BTN_ENABLE", "Enable selected"],
+        ["BTN_PAGE", "Details"]
+      ]
+    }
+  ],
+  "settings": [
+    {
+      "key": "layout",
+      "label": "Screen layout",
+      "type": "choice",
+      "default": "full",
+      "reset": 2,
+      "options": [["full", "Full screen"]]
+    },
+    {
+      "key": "renderer",
+      "label": "Renderer",
+      "type": "choice",
+      "default": "auto",
+      "reset": 2,
+      "options": [["auto", "GPU 60 fps"]]
+    }
+  ],
+  "config": {
+    "fullScreenRequired": true,
+    "writes": "Only user-triggered activation through BMW's own setting provider; unavailable features remain read-only"
+  }
+}
