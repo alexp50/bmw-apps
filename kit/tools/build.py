@@ -324,7 +324,7 @@ def make_icon(spec, out):
 WIDGET_COMPONENT_ID = 501
 
 
-def build_start_widget(spec, app_id, icon_src, out):
+def build_start_widget(spec, app_id, icon_src, out, pkg_out=None):
     """app.json "startWidget" -> rhmiDataStartWidget/ (installed format), the home-screen widget.
 
     Same shape as BMW's own widgets on this firmware (Drive Recorder, Weather, News): a logical
@@ -361,9 +361,35 @@ def build_start_widget(spec, app_id, icon_src, out):
                                              'SelectionName': {'value': sid_name, 'type': 'StringId'},
                                              'SelectionIcon': {'value': icon, 'type': 'ResourceId'}}}}}}}
     json.dump(ui, open(os.path.join(out, 'uiDescription', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+    widget_strings = {sid_name: name}
+    widget_strings.update({'SID_CN_DYNAMIC_%04d' % n: '' for n in range(256)})
     for lang in LANGS:
-        json.dump({sid_name: name}, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+        json.dump(widget_strings, open(os.path.join(out, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(icon_src, os.path.join(out, 'resources', icon))
+    layout = sw.get('layout', 'LT_Table_OnlineApps_DriveRecorderWidget')
+    if pkg_out:
+        # mgu-store (local kit patch): the Store installs only the npm package (dist/<id>@<ver>.tgz)
+        # through MainApp's own installer, which makes the app's installed folders from the
+        # package's; the installed rhmiDataStartWidget/ above sits beside source/ only in the .mgu,
+        # which the Store leaves out. So the package carries the widget too, in the package format
+        # its rhmiData has (uiDescriptions/ID7 + variantGroups/Common), as source/rhmiDataStartWidget
+        # (the oap-sdk's config: appFolders.rhmiDataStartWidget = {source, installed}).
+        shutil.rmtree(pkg_out, ignore_errors=True)
+        os.makedirs(os.path.join(pkg_out, 'uiDescriptions', 'ID7'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts'))
+        os.makedirs(os.path.join(pkg_out, 'variantGroups', 'Common', 'images'))
+        pj = {'schemaVersion': '1.3.0', 'application': {k: app_json['application'][k] for k in (
+            'uuid', 'type', 'name', 'vendor', 'version', 'defaultLanguage', 'stringBundleUuid', 'resourceBundleUuid', 'entryPoints')}}
+        pj['application']['uiDescriptions'] = [{'applicationFilePath': './uiDescriptions/ID7/application.xml',
+                                                'uiDescriptionFilePath': './uiDescriptions/ID7/uiDescription.json', 'hmi': ['ID7']}]
+        pj['application']['variantGroups'] = [{'stringsPath': './variantGroups/Common/texts',
+                                               'resourcesPath': './variantGroups/Common/images', 'hmi': ['ID7'], 'brands': ['BMW']}]
+        json.dump(pj, open(os.path.join(pkg_out, 'application.json'), 'w', encoding='utf-8', newline='\n'), indent=2)
+        open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'application.xml'), 'w', encoding='utf-8', newline='\n').write(xml)
+        json.dump(ui, open(os.path.join(pkg_out, 'uiDescriptions', 'ID7', 'uiDescription.json'), 'w', encoding='utf-8', newline='\n'), indent=1)
+        for lang in LANGS:
+            json.dump(widget_strings, open(os.path.join(pkg_out, 'variantGroups', 'Common', 'texts', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
+        shutil.copy(icon_src, os.path.join(pkg_out, 'variantGroups', 'Common', 'images', icon))
     return {'component': comp, 'layout': ui['containers']['500']['components'][str(WIDGET_COMPONENT_ID)]['cells']['Widget']['value']}
 
 
@@ -510,7 +536,7 @@ def build(app_id, language='en'):
         json.dump(strings, open(os.path.join(ir, 'strings', lang + '.json'), 'w', encoding='utf-8', newline='\n'), ensure_ascii=False)
     shutil.copy(os.path.join(pr, 'variantGroups', 'Common', 'images', icon), os.path.join(ir, 'resources', icon))
     if spec.get('startWidget'):
-        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'))
+        info = build_start_widget(spec, app_id, os.path.join(ir, 'resources', icon), os.path.join(stage, 'rhmiDataStartWidget'), os.path.join(src, 'rhmiDataStartWidget'))
         print('  home-screen widget: %s (%s)' % (info['component'], info['layout']))
 
     # --- installer helpers + metadata ---
